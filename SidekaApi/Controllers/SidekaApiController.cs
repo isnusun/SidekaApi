@@ -11,6 +11,7 @@ using SidekaApi.Helpers;
 using System.Text;
 using Microsoft.Extensions.Primitives;
 using System.Collections;
+using Newtonsoft.Json;
 
 namespace SidekaApi.Controllers
 {
@@ -35,7 +36,6 @@ namespace SidekaApi.Controllers
             if (user == null)
                 return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>());
 
-            //var hash = Crypter.Phpass.Crypt(login["password"], user.UserPass.Substring(4, 8));
             var hash = PhpassHelper.Crypt(login["password"], user.UserPass);
             var success = hash == user.UserPass;
             if (!success)
@@ -60,15 +60,17 @@ namespace SidekaApi.Controllers
 
             var desaId = int.Parse(primaryBlog.MetaValue);
 
-            var token = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
-            var sidekaToken = new SidekaToken();
-            sidekaToken.UserId = user.ID;
-            sidekaToken.Token = token;
-            sidekaToken.DesaId = desaId;
-            sidekaToken.Info = string.Empty;
-            sidekaToken.DateCreated = DateTime.Now;
+            var token = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+            var sidekaToken = new SidekaToken
+            {
+                UserId = user.ID,
+                Token = token,
+                DesaId = desaId,
+                Info = string.Empty,
+                DateCreated = DateTime.Now
+            };
 
-            await dbContext.SidekaToken.AddAsync(sidekaToken);
+            dbContext.SidekaToken.Add(sidekaToken);
             await dbContext.SaveChangesAsync();
 
             var result = new Dictionary<string, object>()
@@ -78,7 +80,8 @@ namespace SidekaApi.Controllers
                 { "token", token },
                 { "user_id", user.ID },
                 { "user_nicename", user.UserNicename },
-                { "apiVersion", configuration.GetValue<string>("ApiVersion") }
+                // TODO: Change apiVersion -> api_version. Potential bug?
+                { "api_version", configuration.GetValue<string>("ApiVersion") }
             };
 
             return Ok(result);
@@ -138,14 +141,277 @@ namespace SidekaApi.Controllers
                 .FirstOrDefaultAsync();
             var roles = (Hashtable)new PhpSerializer().Deserialize(userMeta.MetaValue);
 
-            var result = new Dictionary<string, object>();
-            result.Add("user_id", sidekaToken.UserId);
-            result.Add("desa_id", sidekaToken.DesaId);
-            result.Add("token", sidekaToken.Token);
-            // TODO: This one here is a potential bug because not tested for keys > 1
-            result.Add("roles", roles.Keys);
+            var result = new Dictionary<string, object>
+            {
+                { "user_id", sidekaToken.UserId },
+                { "desa_id", sidekaToken.DesaId },
+                { "token", sidekaToken.Token },
+                // TODO: This one here is a potential bug because not tested for keys > 1
+                { "roles", roles.Keys }
+            };
 
             return result;
+        }
+
+        [HttpPost("content/{desaId}/{contentType}/subtypes")]
+        public async Task<IActionResult> GetContentSubtype(int desaId, string contentType)
+        {
+            var auth = await GetAuth(desaId);
+            if (auth == null)
+                return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>());
+
+            var subTypes = await dbContext.SidekaContent
+                .Where(sc => sc.DesaId == desaId && sc.Type == contentType)
+                .OrderByDescending(sc => sc.Timestamp)
+                .Select(sc => sc.Subtype)
+                .Distinct()
+                .ToListAsync();
+
+            return Ok(subTypes);
+        }
+
+        [HttpGet("content/{desaId}/{contentType}")]
+        [HttpGet("content/{desaId}/{contentType}/{contentSubtype}")]
+        public async Task<IActionResult> GetContent(int desaId, string contentType, string contentSubtype = null)
+        {
+            var auth = await GetAuth(desaId);
+            if (auth == null)
+                return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>());
+
+            var timestamp = QueryStringHelper.GetQueryString<int>(Request.Query, "timestamp", 0);
+
+            var contentQuery = dbContext.SidekaContent
+                .Where(sc => sc.DesaId == desaId)
+                .Where(sc => sc.Timestamp > timestamp)
+                .Where(sc => sc.Type == contentType)
+                .Where(sc => sc.ApiVersion == "1.0");
+
+            if (!string.IsNullOrWhiteSpace(contentSubtype))
+                contentQuery = contentQuery.Where(sc => sc.Subtype == contentSubtype);
+
+            var content = await contentQuery
+                .OrderByDescending(sc => sc.Timestamp)
+                .Select(sc => sc.Content)
+                .FirstOrDefaultAsync();
+
+            if (string.IsNullOrWhiteSpace(content))
+                return StatusCode((int)HttpStatusCode.NotFound, new Dictionary<string, string>());
+
+            // TODO: logs(auth["user_id"], desa_id, "", "get_content", content_type, content_subtype)
+            return Ok(content);
+        }
+
+        [HttpPost("content/{desaId}/{contentType}")]
+        [HttpPost("content/{desaId}/{contentType}/{contentSubtype")]
+        public async Task<IActionResult> PostContent([FromBody]Dictionary<string, object> data, int desaId,
+            string contentType, string contentSubtype = null)
+        {
+            var auth = await GetAuth(desaId);
+            if (auth == null)
+                return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, object>() { { "success", false } });
+
+            if (contentType == "subtypes")
+                return StatusCode((int)HttpStatusCode.InternalServerError, new Dictionary<string, object>() { { "success", false } });
+
+            var apiVersion = configuration.GetValue<string>("ApiVersion");
+            var totalData = await dbContext.SidekaContent
+                .Where(sc => sc.DesaId == desaId)
+                .Where(sc => sc.Type == contentType)
+                .Where(sc => sc.ApiVersion == apiVersion)
+                .CountAsync();
+
+            if (totalData > 0)
+                return StatusCode((int)HttpStatusCode.InternalServerError,
+                    new Dictionary<string, object>() { { "error", "Sideka desktop needs to be updated" } });
+
+            var maxChangeIdQuery = dbContext.SidekaContent
+                .Where(sc => sc.DesaId == desaId)
+                .Where(sc => sc.Type == contentType);
+
+            if (!string.IsNullOrWhiteSpace(contentSubtype))
+                maxChangeIdQuery = maxChangeIdQuery.Where(sc => sc.Subtype == contentSubtype);
+
+            var maxChangeId = await maxChangeIdQuery.Select(sc => sc.ChangeId).DefaultIfEmpty(0).MaxAsync();
+            var newChangeId = maxChangeId + 1;
+            var timestamp = (long)data.GetValueOrDefault("timestamp", 0);
+            var serverTimestamp = DateTimeOffset.Now.ToUnixTimeSeconds();
+
+            if (timestamp > serverTimestamp || timestamp <= 0)
+                timestamp = serverTimestamp;
+
+            var sidekaContent = new SidekaContent
+            {
+                DesaId = desaId,
+                Type = contentType,
+                Subtype = contentSubtype,
+                Content = JsonConvert.SerializeObject(data),
+                Timestamp = timestamp,
+                DateCreated = DateTime.Now,
+                CreatedBy = (int)auth["user_id"],
+                ChangeId = newChangeId,
+                ApiVersion = "1.0"
+            };
+
+            // TODO: logs(auth["user_id"], desa_id, "", "save_content", content_type, content_subtype)
+            dbContext.Add(sidekaContent);
+            await dbContext.SaveChangesAsync();
+
+            return Ok(new Dictionary<string, object>() { { "success", true } });
+        }
+
+        [HttpGet("content/v2/{desaId}/{contentType}")]
+        [HttpGet("content/v2/{desaId}/{contentType}/{contentSubtype}")]
+        public async Task<IActionResult> GetContentV2(int desaId, string contentType, string contentSubtype = null)
+        {
+            var auth = await GetAuth(desaId);
+            if (auth == null)
+                return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>());
+
+            var clientChangeId = 0;
+            var changeId = QueryStringHelper.GetQueryString<int>(Request.Query, "change_id", 0);
+            if (changeId > 0)
+                clientChangeId = changeId;
+
+            var contentQuery = dbContext.SidekaContent
+                .Where(sc => sc.DesaId == desaId)
+                .Where(sc => sc.Type == contentType)
+                .Where(sc => sc.Subtype == contentSubtype)
+                .Where(sc => sc.ChangeId >= clientChangeId);
+
+            if (!string.IsNullOrWhiteSpace(contentSubtype))
+                contentQuery = contentQuery.Where(sc => sc.Subtype == contentSubtype);
+
+            var sidekaContent = await contentQuery.OrderByDescending(sc => sc.ChangeId).FirstOrDefaultAsync();
+            if (sidekaContent == null)
+                return StatusCode((int)HttpStatusCode.NotFound, new Dictionary<string, string>());
+
+            var content = JsonConvert.DeserializeObject<Dictionary<string, object>>(sidekaContent.Content);
+            if (sidekaContent.ApiVersion == "1.0")
+                content["columns"] = new string[] { "nik", "nama_penduduk", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "pendidikan", "agama", "status_kawin", "pekerjaan", "pekerjaan_ped", "kewarganegaraan", "kompetensi", "no_telepon", "email", "no_kitas", "no_paspor", "golongan_darah", "status_penduduk", "status_tinggal", "kontrasepsi", "difabilitas", "no_kk", "nama_ayah", "nama_ibu", "hubungan_keluarga", "nama_dusun", "rw", "rt", "alamat_jalan" };
+
+            var returnData = new Dictionary<string, object>()
+            {
+                { "success", true },
+                { "changeId", changeId },
+                { "apiVersion", sidekaContent.ApiVersion },
+                { "columns", content["columns"] },
+                // TODO: remove this later
+                { "change_id", changeId },
+            };
+
+            if (clientChangeId == 0)
+                returnData.Add("data", content["data"]);
+            else if (changeId == clientChangeId)
+                returnData.Add("diffs", new List<object>());
+            else
+            {
+                var diffs = GetDiffsNewerThanClientAsync(desaId, contentType, contentSubtype, 
+                    clientChangeId, (Dictionary<string, object>)content["columns"]);
+                returnData.Add("diffs", diffs);
+            }
+
+            // TODO: logs(auth["user_id"], desa_id, "", "get_content", content_type, content_subtype)
+            return Ok(returnData);
+        }
+
+        private async Task GetDiffsNewerThanClientAsync(int desaId, string contentType, string contentSubtype, 
+            int clientChangeId, Dictionary<string, object> clientColumns)
+        {
+            var result = new Dictionary<string, object>();
+            foreach(var key in clientColumns.Keys)
+                result.Add(key, new List<object>());
+
+            var newerQuery = dbContext.SidekaContent
+                .Where(sc => sc.DesaId == desaId)
+                .Where(sc => sc.Type == contentType)
+                .Where(sc => sc.ChangeId > clientChangeId);
+
+            if (!string.IsNullOrWhiteSpace(contentSubtype))
+                newerQuery = newerQuery
+                    .Where(sc => sc.Subtype == contentSubtype)
+                    .OrderBy(sc => sc.ChangeId);
+
+            var contents = await newerQuery.Select(sc => sc.Content).ToListAsync();
+            foreach(var contentString in contents)
+            {
+                var content = JsonConvert.DeserializeObject<Dictionary<string, object>>(contentString);
+                if (!content.ContainsKey("diffs"))
+                    continue;
+
+                var columns = (Dictionary<string, object>)content["columns"];
+                var diffs = (Dictionary<string, object>)content["diffs"];
+                foreach (var diff in diffs)
+                {
+                    if (!clientColumns.ContainsKey(diff.Key))
+                        continue;
+                                       
+                    var diffTabColumns = columns[diff.Key];
+                    var clientTabColumns = clientColumns[diff.Key];
+                    foreach(var diffContent in (Dictionary<string, object>)diffs[diff.Key])
+                    {
+                        if (diffTabColumns == clientTabColumns)
+                            ((List<object>)result[diff.Key]).Add(diffContent.Value);
+                        else
+                        {
+                            var transformedDiff = new Dictionary<string, object>();
+                            foreach(var type in new string[] { "added", "modified", "deleted" })
+                            {
+                                var diffContentType = (Dictionary<string, object>)diffContent.Value;
+                                transformedDiff.Add(type, TransformData(
+                                    (Dictionary<string, object>)diffTabColumns, 
+                                    (Dictionary<string, object>)clientTabColumns, 
+                                    diffContentType));
+                                ((List<object>)result[diff.Key]).Add(transformedDiff);
+                            }
+                        }
+                    }
+                }
+            }   
+        }
+
+        private List<object> TransformData(Dictionary<string, object> fromColumns, 
+            Dictionary<string, object> toColumns, Dictionary<string, object> data)
+        {
+            if (fromColumns == toColumns)
+                return data.Values.ToList();
+
+            var fromData = new List<object>();
+            foreach(var d in data)
+            {
+                var obj = ArrayToObject((object[])d.Value, fromColumns.Keys.ToList());
+                fromData.Add(obj);
+            }
+
+            var toData = new List<object>();
+            foreach(var d in fromData)
+            {
+                var arr = ObjectToArray(d, toColumns.Keys.ToList());
+                toData.Add(arr);
+            }
+
+            return toData;
+        }  
+
+        private object ArrayToObject(object[] arr, List<string> columns)
+        {
+            var result = new Dictionary<string, object>();
+            var counter = 0;
+
+            foreach(var column in columns)
+            {
+                result.Add(column, arr[counter]);
+                counter += 1;
+            }
+
+            return result;
+        }
+
+        private object[] ObjectToArray(object obj, List<string> columns)
+        {
+            var result = new List<object>();
+            foreach(var column in columns)
+                result.Add(obj.GetType().GetProperty(column).GetValue(obj, null));
+            return result.ToArray();
         }
 
         private string GetTokenFromHeaders()
