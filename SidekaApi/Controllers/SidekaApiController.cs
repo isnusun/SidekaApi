@@ -12,6 +12,7 @@ using System.Text;
 using Microsoft.Extensions.Primitives;
 using System.Collections;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace SidekaApi.Controllers
 {
@@ -122,37 +123,7 @@ namespace SidekaApi.Controllers
             await FillAuth(auth);
             return Ok(auth);
         }
-
-        private async Task<Dictionary<string, object>> GetAuth(int desaId)
-        {
-            var token = GetTokenFromHeaders();
-            if (token == null)
-                return null;
-
-            var sidekaToken = await dbContext.SidekaToken
-                .Where(t => t.Token == token && t.DesaId == desaId)
-                .FirstOrDefaultAsync();
-            if (sidekaToken == null)
-                return null;
-
-            var capabilities = string.Format("wp_{0}_capabilities", sidekaToken.DesaId);
-            var userMeta = await dbContext.WordpressUserMeta
-                .Where(wum => wum.UserId == sidekaToken.UserId && wum.MetaKey == capabilities)
-                .FirstOrDefaultAsync();
-            var roles = (Hashtable)new PhpSerializer().Deserialize(userMeta.MetaValue);
-
-            var result = new Dictionary<string, object>
-            {
-                { "user_id", sidekaToken.UserId },
-                { "desa_id", sidekaToken.DesaId },
-                { "token", sidekaToken.Token },
-                // TODO: This one here is a potential bug because not tested for keys > 1
-                { "roles", roles.Keys }
-            };
-
-            return result;
-        }
-
+        
         [HttpPost("content/{desaId}/{contentType}/subtypes")]
         public async Task<IActionResult> GetContentSubtype(int desaId, string contentType)
         {
@@ -202,7 +173,7 @@ namespace SidekaApi.Controllers
         }
 
         [HttpPost("content/{desaId}/{contentType}")]
-        [HttpPost("content/{desaId}/{contentType}/{contentSubtype")]
+        [HttpPost("content/{desaId}/{contentType}/{contentSubtype}")]
         public async Task<IActionResult> PostContent([FromBody]Dictionary<string, object> data, int desaId,
             string contentType, string contentSubtype = null)
         {
@@ -268,7 +239,7 @@ namespace SidekaApi.Controllers
                 return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>());
 
             var clientChangeId = 0;
-            var changeId = QueryStringHelper.GetQueryString<int>(Request.Query, "change_id", 0);
+            var changeId = QueryStringHelper.GetQueryString<int>(Request.Query, "changeId", 0);
             if (changeId > 0)
                 clientChangeId = changeId;
 
@@ -285,7 +256,7 @@ namespace SidekaApi.Controllers
             if (sidekaContent == null)
                 return StatusCode((int)HttpStatusCode.NotFound, new Dictionary<string, string>());
 
-            var content = JsonConvert.DeserializeObject<Dictionary<string, object>>(sidekaContent.Content);
+            var content = JsonConvert.DeserializeObject<JObject>(sidekaContent.Content).ToDictionary();
             if (sidekaContent.ApiVersion == "1.0")
                 content["columns"] = new string[] { "nik", "nama_penduduk", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "pendidikan", "agama", "status_kawin", "pekerjaan", "pekerjaan_ped", "kewarganegaraan", "kompetensi", "no_telepon", "email", "no_kitas", "no_paspor", "golongan_darah", "status_penduduk", "status_tinggal", "kontrasepsi", "difabilitas", "no_kk", "nama_ayah", "nama_ibu", "hubungan_keluarga", "nama_dusun", "rw", "rt", "alamat_jalan" };
 
@@ -334,7 +305,7 @@ namespace SidekaApi.Controllers
             var contents = await newerQuery.Select(sc => sc.Content).ToListAsync();
             foreach(var contentString in contents)
             {
-                var content = JsonConvert.DeserializeObject<Dictionary<string, object>>(contentString);
+                var content = JsonConvert.DeserializeObject<JObject>(contentString).ToDictionary();
                 if (!content.ContainsKey("diffs"))
                     continue;
 
@@ -347,20 +318,16 @@ namespace SidekaApi.Controllers
                                        
                     var diffTabColumns = columns[diff.Key];
                     var clientTabColumns = clientColumns[diff.Key];
-                    foreach(var diffContent in (Dictionary<string, object>)diffs[diff.Key])
+                    foreach(Dictionary<string, object> diffContent in (IEnumerable<object>)diffs[diff.Key])
                     {
-                        if (diffTabColumns == clientTabColumns)
-                            ((List<object>)result[diff.Key]).Add(diffContent.Value);
+                        if (IsColumnEqual(diffTabColumns, clientTabColumns))
+                            ((List<object>)result[diff.Key]).Add(diffContent);
                         else
                         {
                             var transformedDiff = new Dictionary<string, object>();
                             foreach(var type in new string[] { "added", "modified", "deleted" })
                             {
-                                var diffContentType = (Dictionary<string, object>)diffContent.Value;
-                                transformedDiff.Add(type, TransformData(
-                                    (Dictionary<string, object>)diffTabColumns, 
-                                    (Dictionary<string, object>)clientTabColumns, 
-                                    diffContentType));
+                                transformedDiff.Add(type, TransformData(diffTabColumns, clientTabColumns, (object[])diffContent[type]));
                                 ((List<object>)result[diff.Key]).Add(transformedDiff);
                             }
                         }
@@ -369,14 +336,23 @@ namespace SidekaApi.Controllers
             }   
         }
 
-        private List<object> TransformData(Dictionary<string, object> fromColumns, 
-            Dictionary<string, object> toColumns, Dictionary<string, object> data)
+        [HttpGet("desa")]
+        public async Task<IActionResult> GetAllDesa()
         {
-            if (fromColumns == toColumns)
-                return data.Values.ToList();
+            var result = await dbContext.SidekaDesa.ToListAsync();
+            return Ok(result);
+        }
+
+        private object[]TransformData(object fromColumns, object toColumns, object[] data)
+        {
+            if (toColumns is string && (string)toColumns == "dict")
+                fromColumns = "dict";
+
+            if (IsColumnEqual(fromColumns, toColumns))
+                return data;
 
             var fromData = new List<object>();
-            foreach(var d in data)
+            foreach(var d in (IEnumerable<object>)data)
             {
                 var obj = ArrayToObject((object[])d.Value, fromColumns.Keys.ToList());
                 fromData.Add(obj);
@@ -414,6 +390,15 @@ namespace SidekaApi.Controllers
             return result.ToArray();
         }
 
+        private bool IsColumnEqual(object first, object second)
+        {
+            if (first is string && second is string && first == second)
+                return true;
+            if (first is Array && second is Array && Enumerable.SequenceEqual((IEnumerable<string>)first, (IEnumerable<string>)second))
+                return true;
+            return false;
+        }   
+
         private string GetTokenFromHeaders()
         {
             var keyValuePair = Request.Headers.Where(h => h.Key == "X-Auth-Token").FirstOrDefault();
@@ -421,6 +406,37 @@ namespace SidekaApi.Controllers
                 return keyValuePair.Value;
             return null;
         }
+
+        private async Task<Dictionary<string, object>> GetAuth(int desaId)
+        {
+            var token = GetTokenFromHeaders();
+            if (token == null)
+                return null;
+
+            var sidekaToken = await dbContext.SidekaToken
+                .Where(t => t.Token == token && t.DesaId == desaId)
+                .FirstOrDefaultAsync();
+            if (sidekaToken == null)
+                return null;
+
+            var capabilities = string.Format("wp_{0}_capabilities", sidekaToken.DesaId);
+            var userMeta = await dbContext.WordpressUserMeta
+                .Where(wum => wum.UserId == sidekaToken.UserId && wum.MetaKey == capabilities)
+                .FirstOrDefaultAsync();
+            var roles = (Hashtable)new PhpSerializer().Deserialize(userMeta.MetaValue);
+
+            var result = new Dictionary<string, object>
+            {
+                { "user_id", sidekaToken.UserId },
+                { "desa_id", sidekaToken.DesaId },
+                { "token", sidekaToken.Token },
+                // TODO: This one here is a potential bug because not tested for keys > 1
+                { "roles", roles.Keys }
+            };
+
+            return result;
+        }
+
 
         private async Task FillAuth(Dictionary<string, object> auth)
         {
