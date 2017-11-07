@@ -13,6 +13,7 @@ using Microsoft.Extensions.Primitives;
 using System.Collections;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using SidekaApi.ViewModels;
 
 namespace SidekaApi.Controllers
 {
@@ -85,13 +86,14 @@ namespace SidekaApi.Controllers
                 { "api_version", configuration.GetValue<string>("ApiVersion") }
             };
 
+            await FillAuth(result);
             return Ok(result);
         }
 
         [HttpGet("logout")]
         public async Task<IActionResult> Logout()
         {
-            var token = GetTokenFromHeaders();
+            var token = GetValueFromHeaders("X-Auth-Token");
             if (!string.IsNullOrEmpty(token))
             {
                 var sidekaToken = await dbContext.SidekaToken
@@ -123,8 +125,8 @@ namespace SidekaApi.Controllers
             await FillAuth(auth);
             return Ok(auth);
         }
-        
-        [HttpPost("content/{desaId}/{contentType}/subtypes")]
+
+        [HttpGet("content/{desaId}/{contentType}/subtypes")]
         public async Task<IActionResult> GetContentSubtype(int desaId, string contentType)
         {
             var auth = await GetAuth(desaId);
@@ -223,7 +225,7 @@ namespace SidekaApi.Controllers
                 ApiVersion = "1.0"
             };
 
-            // TODO: logs(auth["user_id"], desa_id, "", "save_content", content_type, content_subtype)
+            await Logs((int)auth["user_id"], desaId, "", "save_content", contentType, contentSubtype);
             dbContext.Add(sidekaContent);
             await dbContext.SaveChangesAsync();
 
@@ -236,7 +238,7 @@ namespace SidekaApi.Controllers
         {
             var auth = await GetAuth(desaId);
             if (auth == null)
-                return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>());
+                return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>() { { "message", "Invalid or no token" } });
 
             var clientChangeId = 0;
             var changeId = QueryStringHelper.GetQueryString<int>(Request.Query, "changeId", 0);
@@ -256,40 +258,61 @@ namespace SidekaApi.Controllers
             if (sidekaContent == null)
                 return StatusCode((int)HttpStatusCode.NotFound, new Dictionary<string, string>());
 
-            var content = JsonConvert.DeserializeObject<JObject>(sidekaContent.Content).ToDictionary();
+            var content = JsonConvert.DeserializeObject<JObject>(sidekaContent.Content);
             if (sidekaContent.ApiVersion == "1.0")
-                content["columns"] = new string[] { "nik", "nama_penduduk", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "pendidikan", "agama", "status_kawin", "pekerjaan", "pekerjaan_ped", "kewarganegaraan", "kompetensi", "no_telepon", "email", "no_kitas", "no_paspor", "golongan_darah", "status_penduduk", "status_tinggal", "kontrasepsi", "difabilitas", "no_kk", "nama_ayah", "nama_ibu", "hubungan_keluarga", "nama_dusun", "rw", "rt", "alamat_jalan" };
+                content["columns"] = JArray.FromObject(new string[] { "nik", "nama_penduduk", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "pendidikan", "agama", "status_kawin", "pekerjaan", "pekerjaan_ped", "kewarganegaraan", "kompetensi", "no_telepon", "email", "no_kitas", "no_paspor", "golongan_darah", "status_penduduk", "status_tinggal", "kontrasepsi", "difabilitas", "no_kk", "nama_ayah", "nama_ibu", "hubungan_keluarga", "nama_dusun", "rw", "rt", "alamat_jalan" });
 
             var returnData = new Dictionary<string, object>()
             {
                 { "success", true },
-                { "changeId", changeId },
+                { "changeId", sidekaContent.ChangeId },
                 { "apiVersion", sidekaContent.ApiVersion },
                 { "columns", content["columns"] },
                 // TODO: remove this later
-                { "change_id", changeId },
+                { "change_id", sidekaContent.ChangeId },
             };
 
             if (clientChangeId == 0)
                 returnData.Add("data", content["data"]);
-            else if (changeId == clientChangeId)
+            else if (sidekaContent.ChangeId == clientChangeId)
                 returnData.Add("diffs", new List<object>());
             else
             {
-                var diffs = GetDiffsNewerThanClientAsync(desaId, contentType, contentSubtype, 
-                    clientChangeId, (Dictionary<string, object>)content["columns"]);
+                var diffs = await GetDiffsNewerThanClientAsync(desaId, contentType, contentSubtype,
+                    clientChangeId, (JObject)content["columns"]);
                 returnData.Add("diffs", diffs);
             }
 
-            // TODO: logs(auth["user_id"], desa_id, "", "get_content", content_type, content_subtype)
+            await Logs((int)auth["user_id"], desaId, "", "get_content", contentType, contentSubtype);
             return Ok(returnData);
         }
 
-        private async Task GetDiffsNewerThanClientAsync(int desaId, string contentType, string contentSubtype, 
-            int clientChangeId, Dictionary<string, object> clientColumns)
+        [HttpPost("content/v2/{desaId}/{contentType}")]
+        [HttpPost("content/v2/{desaId}/{contentType}/{contentSubtype}")]
+        public async Task<IActionResult> PostContentV2(int desaId, string contentType, string contentSubtype = null)
+        {
+            var auth = await GetAuth(desaId);
+            if (auth == null)
+                return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>() { { "message", "Invalid or no token" } });
+
+            var permission = contentType;
+            if (new string[] { "perencanaan", "penganggaran", "spp", "penerimaan" }.Contains(contentType))
+                permission = "keuangan";
+            var roles = (IEnumerable<string>)auth["roles"];
+            if (!roles.Contains("administrator") && !roles.Contains(permission))
+                return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>() { { "message", "Your account doesn't have the permission" } });
+
+            // Validate
+
+
+            return null;
+        }
+
+        private async Task<Dictionary<string, object>> GetDiffsNewerThanClientAsync(int desaId, string contentType, 
+            string contentSubtype, int clientChangeId, JObject clientColumns)
         {
             var result = new Dictionary<string, object>();
-            foreach(var key in clientColumns.Keys)
+            foreach (var key in clientColumns.Properties().Select(c => c.Name))
                 result.Add(key, new List<object>());
 
             var newerQuery = dbContext.SidekaContent
@@ -303,37 +326,41 @@ namespace SidekaApi.Controllers
                     .OrderBy(sc => sc.ChangeId);
 
             var contents = await newerQuery.Select(sc => sc.Content).ToListAsync();
-            foreach(var contentString in contents)
+            foreach (var contentString in contents)
             {
-                var content = JsonConvert.DeserializeObject<JObject>(contentString).ToDictionary();
-                if (!content.ContainsKey("diffs"))
+                var contentJObject = JsonConvert.DeserializeObject<JObject>(contentString);
+                var content = new SidekaContentViewModel(contentJObject);
+
+                if (content.diffs == null)
                     continue;
 
-                var columns = (Dictionary<string, object>)content["columns"];
-                var diffs = (Dictionary<string, object>)content["diffs"];
-                foreach (var diff in diffs)
+                foreach (var diff in content.diffs)
                 {
-                    if (!clientColumns.ContainsKey(diff.Key))
+                    if (clientColumns[diff.Key] == null)
                         continue;
-                                       
-                    var diffTabColumns = columns[diff.Key];
+
+                    var diffTabColumns = JsonConvert.DeserializeObject<JToken>(JsonConvert.SerializeObject(content.columns[diff.Key]));
                     var clientTabColumns = clientColumns[diff.Key];
-                    foreach(Dictionary<string, object> diffContent in (IEnumerable<object>)diffs[diff.Key])
+                    foreach (var diffContent in content.diffs[diff.Key])
                     {
-                        if (IsColumnEqual(diffTabColumns, clientTabColumns))
+                        if (!JToken.DeepEquals(diffTabColumns, clientTabColumns))
                             ((List<object>)result[diff.Key]).Add(diffContent);
                         else
                         {
-                            var transformedDiff = new Dictionary<string, object>();
-                            foreach(var type in new string[] { "added", "modified", "deleted" })
+                            var transformedDiff = new SidekaDiff
                             {
-                                transformedDiff.Add(type, TransformData(diffTabColumns, clientTabColumns, (object[])diffContent[type]));
-                                ((List<object>)result[diff.Key]).Add(transformedDiff);
-                            }
+                                added = TransformData(diffTabColumns, clientTabColumns, diffContent.added),
+                                modified = TransformData(diffTabColumns, clientTabColumns, diffContent.modified),
+                                deleted = TransformData(diffTabColumns, clientTabColumns, diffContent.deleted)
+                            };
+                            transformedDiff.total = transformedDiff.added.Length + transformedDiff.modified.Length + transformedDiff.deleted.Length;
+                            ((List<object>)result[diff.Key]).Add(transformedDiff);
                         }
                     }
                 }
-            }   
+            }
+
+            return result;
         }
 
         [HttpGet("desa")]
@@ -343,37 +370,37 @@ namespace SidekaApi.Controllers
             return Ok(result);
         }
 
-        private object[]TransformData(object fromColumns, object toColumns, object[] data)
+        private object[] TransformData(JToken fromColumns, JToken toColumns, object[] data)
         {
-            if (toColumns is string && (string)toColumns == "dict")
-                fromColumns = "dict";
+            if (toColumns is JValue && (string)toColumns == "dict")
+                fromColumns = JToken.FromObject("dict");
 
-            if (IsColumnEqual(fromColumns, toColumns))
+            if (!JToken.DeepEquals(fromColumns, toColumns))
                 return data;
 
             var fromData = new List<object>();
-            foreach(var d in (IEnumerable<object>)data)
+            foreach (var d in data)
             {
-                var obj = ArrayToObject((object[])d.Value, fromColumns.Keys.ToList());
+                var obj = ArrayToObject((object[])d, fromColumns.ToList());
                 fromData.Add(obj);
             }
 
             var toData = new List<object>();
-            foreach(var d in fromData)
+            foreach (var d in fromData)
             {
-                var arr = ObjectToArray(d, toColumns.Keys.ToList());
+                var arr = ObjectToArray((Dictionary<string, object>)d, toColumns.ToList());
                 toData.Add(arr);
             }
 
-            return toData;
-        }  
+            return toData.ToArray();
+        }
 
-        private object ArrayToObject(object[] arr, List<string> columns)
+        private Dictionary<string, object> ArrayToObject(object[] arr, List<JToken> columns)
         {
             var result = new Dictionary<string, object>();
             var counter = 0;
 
-            foreach(var column in columns)
+            foreach (string column in columns)
             {
                 result.Add(column, arr[counter]);
                 counter += 1;
@@ -382,26 +409,17 @@ namespace SidekaApi.Controllers
             return result;
         }
 
-        private object[] ObjectToArray(object obj, List<string> columns)
+        private object[] ObjectToArray(Dictionary<string, object> obj, List<JToken> columns)
         {
             var result = new List<object>();
-            foreach(var column in columns)
-                result.Add(obj.GetType().GetProperty(column).GetValue(obj, null));
+            foreach (string column in columns)
+                result.Add(obj[column]);
             return result.ToArray();
         }
 
-        private bool IsColumnEqual(object first, object second)
+        private string GetValueFromHeaders(string key)
         {
-            if (first is string && second is string && first == second)
-                return true;
-            if (first is Array && second is Array && Enumerable.SequenceEqual((IEnumerable<string>)first, (IEnumerable<string>)second))
-                return true;
-            return false;
-        }   
-
-        private string GetTokenFromHeaders()
-        {
-            var keyValuePair = Request.Headers.Where(h => h.Key == "X-Auth-Token").FirstOrDefault();
+            var keyValuePair = Request.Headers.Where(h => h.Key == key).FirstOrDefault();
             if (!keyValuePair.Equals(new KeyValuePair<string, StringValues>()))
                 return keyValuePair.Value;
             return null;
@@ -409,7 +427,7 @@ namespace SidekaApi.Controllers
 
         private async Task<Dictionary<string, object>> GetAuth(int desaId)
         {
-            var token = GetTokenFromHeaders();
+            var token = GetValueFromHeaders("X-Auth-Token");
             if (token == null)
                 return null;
 
@@ -437,16 +455,47 @@ namespace SidekaApi.Controllers
             return result;
         }
 
-
         private async Task FillAuth(Dictionary<string, object> auth)
         {
             var desaId = (int)auth["desa_id"];
+
+            var desaNameQuery = string.Format("SELECT * FROM wp_{0}_options WHERE option_name = 'blogname'", desaId);
+            var desaName = await dbContext.WordpressOption.FromSql(desaNameQuery).FirstOrDefaultAsync();
+
+            var siteUrlQuery = string.Format("SELECT * FROM wp_{0}_options WHERE option_name = 'siteurl'", desaId);
+            var siteUrl = await dbContext.WordpressOption.FromSql(siteUrlQuery).FirstOrDefaultAsync();
+
             var userId = (int)auth["user_id"];
-            var desa = await dbContext.SidekaDesa.Where(sd => sd.BlogId == desaId).FirstOrDefaultAsync();
             var user = await dbContext.WordpressUser.Where(wu => wu.ID == userId).FirstOrDefaultAsync();
-            auth.Add("desa_name", desa.Desa);
-            auth.Add("siteurl", desa.Domain);
+
+            auth.Add("desa_name", desaName.OptionValue);
+            auth.Add("siteurl", siteUrl.OptionValue);
             auth.Add("user_display_name", user.DisplayName);
+        }
+
+        private async Task Logs(int userId, int desaId, string token, string action, string contentType, string contentSubtype)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                token = GetValueFromHeaders("X-Auth-Token");
+
+            var version = GetValueFromHeaders("X-Sideka-Version");
+            var ip = HttpContext.Connection.RemoteIpAddress.ToString();
+            var platform = GetValueFromHeaders("X-Platform") ?? GetValueFromHeaders("X-Platfrom");
+
+            var log = new SidekaLog
+            {
+                UserId = userId,
+                DesaId = desaId,
+                DateAccessed = DateTime.Now,
+                Type = contentType,
+                Subtype = contentSubtype,
+                Version = version,
+                Ip = ip,
+                Platform = platform
+            };
+
+            dbContext.Add(log);
+            await dbContext.SaveChangesAsync();
         }
     }
 }

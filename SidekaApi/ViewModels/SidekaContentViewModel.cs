@@ -13,8 +13,6 @@ namespace SidekaApi.ViewModels
 
         public SidekaContentViewModel(JObject jObject)
         {
-            diffs = new Dictionary<string, SidekaDiff[]>();
-            data = new Dictionary<string, object[]>();
             columns = new Dictionary<string, SidekaColumnConfig>();
 
             var columnsDict = (JObject)jObject["columns"];
@@ -26,6 +24,7 @@ namespace SidekaApi.ViewModels
             var diffsDict = (JObject)jObject["diffs"];
             if (diffsDict != null)
             {
+                diffs = new Dictionary<string, SidekaDiff[]>();
                 foreach (var key in diffsDict.Properties().Select(p => p.Name))
                 {
                     diffs[key] = diffsDict[key]
@@ -37,6 +36,7 @@ namespace SidekaApi.ViewModels
             var dataDict = (JObject)jObject["data"];
             if (dataDict != null)
             {
+                data = new Dictionary<string, object[]>();
                 foreach (var key in dataDict.Properties().Select(p => p.Name))
                 {
                     data[key] = ParseData((JArray)dataDict[key]);
@@ -65,6 +65,8 @@ namespace SidekaApi.ViewModels
 
     public class SidekaDiff
     {
+        public SidekaDiff() { }
+
         public SidekaDiff(JObject jObject)
         {
             total = (int)jObject["total"];
@@ -94,7 +96,7 @@ namespace SidekaApi.ViewModels
         {
             get
             {
-                return columns != null;
+                return columns == null;
             }
         }
 
