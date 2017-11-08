@@ -10,24 +10,30 @@ namespace SidekaApi.ViewModels
 {
     public class SidekaContentViewModel
     {
+        public SidekaContentViewModel()
+        {
+            Diffs = new Dictionary<string, SidekaDiff[]>();
+            Data = new Dictionary<string, object[]>();
+            Columns = new Dictionary<string, SidekaColumnConfig>();
+        }
 
         public SidekaContentViewModel(JObject jObject)
         {
-            columns = new Dictionary<string, SidekaColumnConfig>();
+            Columns = new Dictionary<string, SidekaColumnConfig>();
 
             var columnsDict = (JObject)jObject["columns"];
             foreach (var key in columnsDict.Properties().Select(p => p.Name))
             {
-                columns[key] = new SidekaColumnConfig(columnsDict[key]);
+                Columns[key] = new SidekaColumnConfig(columnsDict[key]);
             }
 
             var diffsDict = (JObject)jObject["diffs"];
             if (diffsDict != null)
             {
-                diffs = new Dictionary<string, SidekaDiff[]>();
+                Diffs = new Dictionary<string, SidekaDiff[]>();
                 foreach (var key in diffsDict.Properties().Select(p => p.Name))
                 {
-                    diffs[key] = diffsDict[key]
+                    Diffs[key] = diffsDict[key]
                         .Select(d => new SidekaDiff((JObject)d))
                         .ToArray();
                 }
@@ -36,17 +42,22 @@ namespace SidekaApi.ViewModels
             var dataDict = (JObject)jObject["data"];
             if (dataDict != null)
             {
-                data = new Dictionary<string, object[]>();
+                Data = new Dictionary<string, object[]>();
                 foreach (var key in dataDict.Properties().Select(p => p.Name))
                 {
-                    data[key] = ParseData((JArray)dataDict[key]);
+                    Data[key] = ParseData((JArray)dataDict[key]);
                 }
             }
         }
 
-        public Dictionary<string, SidekaDiff[]> diffs { get; set; }
-        public Dictionary<string, object[]> data { get; set; }
-        public Dictionary<string, SidekaColumnConfig> columns { get; set; }
+        [JsonProperty("diffs")]
+        public Dictionary<string, SidekaDiff[]> Diffs { get; set; }
+
+        [JsonProperty("data")]
+        public Dictionary<string, object[]> Data { get; set; }
+
+        [JsonProperty("columns")]
+        public Dictionary<string, SidekaColumnConfig> Columns { get; set; }
 
         public static object ParseDatum(JToken datum)
         {
@@ -69,16 +80,26 @@ namespace SidekaApi.ViewModels
 
         public SidekaDiff(JObject jObject)
         {
-            total = (int)jObject["total"];
-            added = SidekaContentViewModel.ParseData((JArray)jObject["added"]);
-            modified = SidekaContentViewModel.ParseData((JArray)jObject["modified"]);
-            deleted = SidekaContentViewModel.ParseData((JArray)jObject["deleted"]);
+            Total = (int)jObject["total"];
+            Added = SidekaContentViewModel.ParseData((JArray)jObject["added"]);
+            Modified = SidekaContentViewModel.ParseData((JArray)jObject["modified"]);
+            Deleted = SidekaContentViewModel.ParseData((JArray)jObject["deleted"]);
         }
 
-        public object[] added { get; set; }
-        public object[] modified { get; set; }
-        public object[] deleted { get; set; }
-        public int total { get; set; }
+        [JsonProperty("added")]
+        public object[] Added { get; set; }
+
+        [JsonProperty("modified")]
+        public object[] Modified { get; set; }
+
+        [JsonProperty("deleted")]
+        public object[] Deleted { get; set; }
+
+        [JsonProperty("total")]
+        public int Total { get; set; }
+
+        [JsonProperty("rewritten")]
+        public bool Rewritten { get; set; }
     }
 
     [JsonConverter(typeof(SidekaColumnConfigSerializer))]
@@ -88,7 +109,7 @@ namespace SidekaApi.ViewModels
         {
             if (jToken is JArray)
             {
-                columns = ((JArray)jToken).Select(s => (string)s).ToArray();
+                Columns = ((JArray)jToken).Select(s => (string)s).ToArray();
             }
         }
 
@@ -96,11 +117,11 @@ namespace SidekaApi.ViewModels
         {
             get
             {
-                return columns == null;
+                return Columns == null;
             }
         }
 
-        public string[] columns { get; set; }
+        public string[] Columns { get; set; }
     }
 
     public class SidekaColumnConfigSerializer : JsonConverter
@@ -115,7 +136,7 @@ namespace SidekaApi.ViewModels
             else
             {
                 //writer.WriteStartArray();
-                serializer.Serialize(writer, config.columns);
+                serializer.Serialize(writer, config.Columns);
             }
         }
 
