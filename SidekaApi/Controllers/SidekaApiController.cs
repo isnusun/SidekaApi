@@ -14,6 +14,7 @@ using System.Collections;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SidekaApi.ViewModels;
+using System.Diagnostics;
 
 namespace SidekaApi.Controllers
 {
@@ -147,6 +148,9 @@ namespace SidekaApi.Controllers
         [HttpGet("content/{desaId}/{contentType}/{contentSubtype}")]
         public async Task<IActionResult> GetContent(int desaId, string contentType, string contentSubtype = null)
         {
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+
             var auth = await GetAuth(desaId);
             if (auth == null)
                 return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>());
@@ -170,7 +174,9 @@ namespace SidekaApi.Controllers
             if (string.IsNullOrWhiteSpace(content))
                 return StatusCode((int)HttpStatusCode.NotFound, new Dictionary<string, string>());
 
-            // TODO: logs(auth["user_id"], desa_id, "", "get_content", content_type, content_subtype)
+            sw.Stop();
+            await Logs((int)auth["user_id"], desaId, "", "get_content", contentType, contentSubtype, sw.Elapsed.Milliseconds);
+
             return Ok(content);
         }
 
@@ -179,6 +185,9 @@ namespace SidekaApi.Controllers
         public async Task<IActionResult> PostContent([FromBody]Dictionary<string, object> data, int desaId,
             string contentType, string contentSubtype = null)
         {
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+
             var auth = await GetAuth(desaId);
             if (auth == null)
                 return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, object>() { { "success", false } });
@@ -224,10 +233,12 @@ namespace SidekaApi.Controllers
                 ChangeId = newChangeId,
                 ApiVersion = "1.0"
             };
-
-            await Logs((int)auth["user_id"], desaId, "", "save_content", contentType, contentSubtype);
+                        
             dbContext.Add(sidekaContent);
             await dbContext.SaveChangesAsync();
+
+            sw.Stop();
+            await Logs((int)auth["user_id"], desaId, "", "save_content", contentType, contentSubtype, sw.Elapsed.Milliseconds);
 
             return Ok(new Dictionary<string, object>() { { "success", true } });
         }
@@ -236,6 +247,9 @@ namespace SidekaApi.Controllers
         [HttpGet("content/v2/{desaId}/{contentType}/{contentSubtype}")]
         public async Task<IActionResult> GetContentV2(int desaId, string contentType, string contentSubtype = null)
         {
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+
             var auth = await GetAuth(desaId);
             if (auth == null)
                 return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>() { { "message", "Invalid or no token" } });
@@ -283,7 +297,9 @@ namespace SidekaApi.Controllers
                 returnData.Add("diffs", diffs);
             }
 
-            await Logs((int)auth["user_id"], desaId, "", "get_content", contentType, contentSubtype);
+            sw.Stop();
+            await Logs((int)auth["user_id"], desaId, "", "get_content", contentType, contentSubtype, sw.Elapsed.Milliseconds);
+
             return Ok(returnData);
         }
 
@@ -291,6 +307,9 @@ namespace SidekaApi.Controllers
         [HttpPost("content/v2/{desaId}/{contentType}/{contentSubtype}")]
         public async Task<IActionResult> PostContentV2([FromBody]JObject contentJObject, int desaId, string contentType, string contentSubtype = null)
         {
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+
             var auth = await GetAuth(desaId);
             if (auth == null)
                 return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>() { { "message", "Invalid or no token" } });
@@ -459,6 +478,9 @@ namespace SidekaApi.Controllers
                 { "diffs", diffs },
                 { "columns", content.Columns },
             };
+
+            sw.Stop();
+            await Logs((int)auth["user_id"], desaId, "", "save_content", contentType, contentSubtype, sw.Elapsed.Milliseconds);
 
             return Ok(result);
         }
@@ -711,7 +733,7 @@ namespace SidekaApi.Controllers
             auth.Add("user_display_name", user.DisplayName);
         }
 
-        private async Task Logs(int userId, int desaId, string token, string action, string contentType, string contentSubtype)
+        private async Task Logs(int userId, int desaId, string token, string action, string contentType, string contentSubtype, int totalTime)
         {
             if (string.IsNullOrWhiteSpace(token))
                 token = GetValueFromHeaders("X-Auth-Token");
@@ -725,8 +747,11 @@ namespace SidekaApi.Controllers
                 UserId = userId,
                 DesaId = desaId,
                 DateAccessed = DateTime.Now,
+                Token = token,
+                Action = action,
                 Type = contentType,
                 Subtype = contentSubtype,
+                TotalTime = totalTime,
                 Version = version,
                 Ip = ip,
                 Platform = platform

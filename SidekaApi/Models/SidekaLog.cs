@@ -20,6 +20,7 @@ namespace SidekaApi.Models
         public string Action { get; set; }
         public string Type { get; set; }
         public string Subtype { get; set; }
+        public int TotalTime { get; set; }
         public string Version { get; set; }
         public string Ip { get; set; }
         public string Platform { get; set; }
