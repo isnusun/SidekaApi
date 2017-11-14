@@ -400,7 +400,19 @@ namespace SidekaApi.Controllers
                 .Select(sc => sc.Content)
                 .FirstOrDefaultAsync();
 
-            JObject latestContentJObject = JsonConvert.DeserializeObject<JObject>(latestContentString);
+            JObject latestContentJObject = null;
+            if (string.IsNullOrWhiteSpace(latestContentString))
+            {
+                latestContentJObject = new JObject
+                {
+                    { "data", new JObject() },
+                    { "columns", contentJObject["columns"] }
+                };
+            }
+            else
+            {
+                latestContentJObject = JsonConvert.DeserializeObject<JObject>(latestContentString);
+            }
 
             var diffs = await GetDiffsNewerThanClient(desaId, contentType, contentSubtype, clientChangeId, (JObject)contentJObject["columns"]);
 
@@ -412,9 +424,9 @@ namespace SidekaApi.Controllers
                 foreach(var column in content.Columns)
                 {
                     // Initialize so the latest content have the same tab with the posted content
-                    if (latestContent.Columns[column.Key] == null)
+                    if (!latestContent.Columns.ContainsKey(column.Key))
                         latestContent.Columns[column.Key] = column.Value;
-                    if (latestContent.Data[column.Key] == null)
+                    if (!latestContent.Data.ContainsKey(column.Key))
                         latestContent.Data[column.Key] = new List<object>().ToArray();
 
                     if (content.Data != null && content.Data[column.Key] != null && 

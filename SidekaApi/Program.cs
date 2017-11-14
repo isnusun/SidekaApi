@@ -20,11 +20,8 @@ namespace SidekaApi
 
         public static IWebHost BuildWebHost(string[] args) =>
             WebHost.CreateDefaultBuilder(args)
+                .UseUrls("http://0.0.0.0:5001")
                 .UseStartup<Startup>()
-                .UseKestrel(options =>
-                {
-                    options.Listen(IPAddress.Loopback, 5001);
-                })
                 .Build();
     }
 }
