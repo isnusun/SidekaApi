@@ -37,7 +37,7 @@ namespace SidekaApi
         public static IWebHost BuildWebHost(string[] args) =>
             WebHost.CreateDefaultBuilder(args)
                 .UseKestrel()
-                .UseUrls("http://0.0.0.0:59999")
+                .UseUrls("http://0.0.0.0:5001")
                 .UseContentRoot(Directory.GetCurrentDirectory())
                 .UseIISIntegration()                                
                 .UseStartup<Startup>()
