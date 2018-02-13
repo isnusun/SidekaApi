@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Net;
+using Serilog;
+using SidekaApi.Helpers;
 
 namespace SidekaApi
 {
@@ -15,13 +17,31 @@ namespace SidekaApi
     {
         public static void Main(string[] args)
         {
-            BuildWebHost(args).Run();
+            Log.Logger = LogConfigurationHelper.GetConfiguration();
+
+            try
+            {
+                var host = BuildWebHost(args);
+                host.Run();
+            }
+            catch (Exception ex)
+            {
+                Log.Fatal(ex, "Host terminated unexpectedly");
+            }
+            finally
+            {
+                Log.CloseAndFlush();
+            }
         }
 
         public static IWebHost BuildWebHost(string[] args) =>
             WebHost.CreateDefaultBuilder(args)
+                .UseKestrel()
                 .UseUrls("http://0.0.0.0:5001")
+                .UseContentRoot(Directory.GetCurrentDirectory())
+                .UseIISIntegration()                                
                 .UseStartup<Startup>()
+                .UseSerilog()
                 .Build();
     }
 }
