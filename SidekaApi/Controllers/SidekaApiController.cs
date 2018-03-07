@@ -255,9 +255,13 @@ namespace SidekaApi.Controllers
                 return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>() { { "message", "Invalid or no token" } });
 
             var clientChangeId = 0;
+
             var changeId = QueryStringHelper.GetQueryString<int>(Request.Query, "changeId", 0);
+
             if (changeId > 0)
                 clientChangeId = changeId;
+
+            var sizeComparison = await GetSizeComparison(desaId, contentType, contentSubtype, clientChangeId);
 
             var contentQuery = dbContext.SidekaContent
                 .Where(sc => sc.DesaId == desaId)
@@ -269,10 +273,12 @@ namespace SidekaApi.Controllers
                 contentQuery = contentQuery.Where(sc => sc.Subtype == contentSubtype);
 
             var sidekaContent = await contentQuery.OrderByDescending(sc => sc.ChangeId).FirstOrDefaultAsync();
+
             if (sidekaContent == null)
                 return StatusCode((int)HttpStatusCode.NotFound, new Dictionary<string, string>());
 
             var content = JsonConvert.DeserializeObject<JObject>(sidekaContent.Content);
+
             if (sidekaContent.ApiVersion == "1.0")
                 content["columns"] = JArray.FromObject(new string[] { "nik", "nama_penduduk", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "pendidikan", "agama", "status_kawin", "pekerjaan", "pekerjaan_ped", "kewarganegaraan", "kompetensi", "no_telepon", "email", "no_kitas", "no_paspor", "golongan_darah", "status_penduduk", "status_tinggal", "kontrasepsi", "difabilitas", "no_kk", "nama_ayah", "nama_ibu", "hubungan_keluarga", "nama_dusun", "rw", "rt", "alamat_jalan" });
 
@@ -286,21 +292,88 @@ namespace SidekaApi.Controllers
                 { "change_id", sidekaContent.ChangeId },
             };
 
-            if (clientChangeId == 0)
-                returnData.Add("data", content["data"]);
-            else if (sidekaContent.ChangeId == clientChangeId)
-                returnData.Add("diffs", new List<object>());
+            Dictionary<string, object> diffs = null;
+
+            if (sizeComparison["contentSize"] > sizeComparison["diffSize"])
+            {
+                if (clientChangeId == 0)
+                    returnData.Add("data", content["data"]);
+                else if (sidekaContent.ChangeId == clientChangeId)
+                    returnData.Add("diffs", new List<object>());
+                else
+                {
+                    diffs = await GetDiffsNewerThanClient(desaId, contentType, contentSubtype,
+                        clientChangeId, (JObject)content["columns"]);
+
+                    var sizes = CompareSizes(content["data"], diffs);
+
+                    returnData.Add("diffs", diffs);
+                }
+            }
             else
             {
-                var diffs = await GetDiffsNewerThanClient(desaId, contentType, contentSubtype,
-                    clientChangeId, (JObject)content["columns"]);
-                returnData.Add("diffs", diffs);
+                returnData.Add("data", content["data"]);
             }
 
             sw.Stop();
             await Logs((int)auth["user_id"], desaId, "", "get_content", contentType, contentSubtype, sw.Elapsed.Milliseconds);
-
             return Ok(returnData);
+        }
+
+        [HttpGet("update_sizes/v2/{desaId}/{contentType}")]
+        [HttpGet("update_sizes/v2/{desaId}/{contentType}/{contentSubtype}")]
+        public async Task<IActionResult> UpdateSizes(int desaId, string contentType, string contentSubtype = null)
+        {
+            var clientChangeId = 0;
+            var changeId = QueryStringHelper.GetQueryString<int>(Request.Query, "changeId", 0);
+
+            if (changeId > 0)
+                clientChangeId = changeId;
+
+            var contentQuery = dbContext.SidekaContent
+                .Where(sc => sc.DesaId == desaId)
+                .Where(sc => sc.Type == contentType)
+                .Where(sc => sc.Subtype == contentSubtype)
+                .Where(sc => sc.ChangeId >= clientChangeId);
+
+            var sidekaContents = await contentQuery.OrderByDescending(sc => sc.ChangeId).ToListAsync();
+            var sizes = new List<Dictionary<string, int>>();
+            var result = new Dictionary<string, object>()
+            {
+                { "success", true },
+                { "content", sizes }
+            };
+
+            foreach (var sidekaContent in sidekaContents)
+            {
+                var sidekaContentJObject = JsonConvert.DeserializeObject<JObject>(sidekaContent.Content);
+                var sizeItem = new Dictionary<string, int>();
+
+                try
+                {
+                    var content = new SidekaContentViewModel(sidekaContentJObject);
+                    var contentSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(content.Data));
+                    var diffSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(content.Diffs));
+
+                    sizeItem.Add("contentSize", contentSize);
+
+                    if (content.Diffs == null)
+                        sizeItem.Add("diffSize", 0);
+                    else
+                        sizeItem.Add("diffSize", diffSize);
+
+                    sidekaContent.ContentSize = contentSize;
+                    sidekaContent.DiffSize = diffSize;
+
+                    dbContext.Update(sidekaContent);
+                    await dbContext.SaveChangesAsync();
+                    sizes.Add(sizeItem);
+                }
+
+                catch (Exception ex) { }
+            }
+
+            return Ok(result);
         }
 
         [HttpPost("content/v2/{desaId}/{contentType}")]
@@ -467,6 +540,9 @@ namespace SidekaApi.Controllers
                 }
             }
 
+            var contentSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(newContent.Data));
+            var diffSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(diffs));
+
             var sidekaContent = new SidekaContent
             {
                 DesaId = desaId,
@@ -476,7 +552,9 @@ namespace SidekaApi.Controllers
                 DateCreated = DateTime.Now,
                 CreatedBy = (int)auth["user_id"],
                 ChangeId = newChangeId,
-                ApiVersion = configuration.GetValue<string>("ApiVersion")
+                ApiVersion = configuration.GetValue<string>("ApiVersion"),
+                ContentSize = contentSize,
+                DiffSize = diffSize
             };
 
             dbContext.Add(sidekaContent);
@@ -518,38 +596,62 @@ namespace SidekaApi.Controllers
             foreach (var contentString in contents)
             {
                 var contentJObject = JsonConvert.DeserializeObject<JObject>(contentString);
-                var content = new SidekaContentViewModel(contentJObject);
-
-                if (content.Diffs == null)
-                    continue;
-
-                foreach (var diff in content.Diffs)
+                try
                 {
-                    if (clientColumns[diff.Key] == null)
+                    var content = new SidekaContentViewModel(contentJObject);
+
+                    if (content.Diffs == null)
                         continue;
 
-                    var diffTabColumns = JsonConvert.DeserializeObject<JToken>(JsonConvert.SerializeObject(content.Columns[diff.Key]));
-                    var clientTabColumns = clientColumns[diff.Key];
-                    foreach (var diffContent in content.Diffs[diff.Key])
+                    foreach (var diff in content.Diffs)
                     {
-                        if (JToken.DeepEquals(diffTabColumns, clientTabColumns))
-                            ((List<object>)result[diff.Key]).Add(diffContent);
-                        else
+                        if (clientColumns[diff.Key] == null)
+                            continue;
+
+                        var diffTabColumns = JsonConvert.DeserializeObject<JToken>(JsonConvert.SerializeObject(content.Columns[diff.Key]));
+                        var clientTabColumns = clientColumns[diff.Key];
+                        foreach (var diffContent in content.Diffs[diff.Key])
                         {
-                            var transformedDiff = new SidekaDiff
+                            if (JToken.DeepEquals(diffTabColumns, clientTabColumns))
+                                ((List<object>)result[diff.Key]).Add(diffContent);
+                            else
                             {
-                                Added = TransformData(diffTabColumns, clientTabColumns, diffContent.Added),
-                                Modified = TransformData(diffTabColumns, clientTabColumns, diffContent.Modified),
-                                Deleted = TransformData(diffTabColumns, clientTabColumns, diffContent.Deleted)
-                            };
-                            transformedDiff.Total = transformedDiff.Added.Length + transformedDiff.Modified.Length + transformedDiff.Deleted.Length;
-                            ((List<object>)result[diff.Key]).Add(transformedDiff);
+                                var transformedDiff = new SidekaDiff
+                                {
+                                    Added = TransformData(diffTabColumns, clientTabColumns, diffContent.Added),
+                                    Modified = TransformData(diffTabColumns, clientTabColumns, diffContent.Modified),
+                                    Deleted = TransformData(diffTabColumns, clientTabColumns, diffContent.Deleted)
+                                };
+                                transformedDiff.Total = transformedDiff.Added.Length + transformedDiff.Modified.Length + transformedDiff.Deleted.Length;
+                                ((List<object>)result[diff.Key]).Add(transformedDiff);
+                            }
                         }
                     }
                 }
+                catch(Exception ex) { }
             }
 
             return result;
+        }
+
+        private async Task<Dictionary<string, int>> GetSizeComparison(int desaId, string contentType, string contentSubtype, 
+            int clientChangeId)
+        {
+            var contentQuery = dbContext.SidekaContent
+                .Where(sc => sc.DesaId == desaId)
+                .Where(sc => sc.Type == contentType)
+                .Where(sc => sc.ChangeId > clientChangeId);
+
+            var totalDiffSizeQuery = await contentQuery.SumAsync(sc => sc.DiffSize);
+
+            var contentSizeQuery = await contentQuery.OrderByDescending(sc => sc.ChangeId)
+                    .FirstOrDefaultAsync();
+
+            return new Dictionary<string, int>()
+            {
+                {"contentSize", contentSizeQuery != null ? contentSizeQuery.ContentSize.Value : 0},
+                {"diffSize", totalDiffSizeQuery != null ? totalDiffSizeQuery.Value : 0}
+            };
         }
 
         [HttpGet("desa")]
@@ -557,6 +659,18 @@ namespace SidekaApi.Controllers
         {
             var result = await dbContext.SidekaDesa.ToListAsync();
             return Ok(result);
+        }
+
+        private Dictionary<string, int> CompareSizes(JToken content, Dictionary<string, object> diffs)
+        {
+            var contentSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(content));
+            var diffSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(diffs));
+
+            return new Dictionary<string, int>
+            {
+                { "contentSize", contentSize },
+                { "diffSize", contentSize }
+            };
         }
 
         private object[] TransformData(JToken fromColumns, JToken toColumns, object[] data)
@@ -615,7 +729,7 @@ namespace SidekaApi.Controllers
             {
                 foreach(var added in diff.Added)
                 {
-                    data.Append(added);
+                    data.Add(added);
                 }
 
                 foreach(var modified in diff.Modified)

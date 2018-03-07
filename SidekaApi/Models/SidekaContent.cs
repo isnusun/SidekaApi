@@ -24,5 +24,7 @@ namespace SidekaApi.Models
         public string OpendataPushError { get; set; }
         public int? ChangeId { get; set; }
         public string ApiVersion { get; set; }
+        public int? DiffSize { get; set; }
+        public int? ContentSize { get; set; }
     }
 }
