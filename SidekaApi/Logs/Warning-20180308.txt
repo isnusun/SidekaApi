@@ -1,0 +1,2 @@
+2018-03-08 16:55:13.401 +07:00 [Warning] Query: '"(from WordpressOption <generated>_2 in DbSet<WordpressOption> select [<generated>_2]).FirstOrDefault..."' uses First/FirstOrDefault operation without OrderBy and filter which may lead to unpredictable results.
+2018-03-08 16:55:14.203 +07:00 [Warning] Query: '"(from WordpressOption <generated>_2 in DbSet<WordpressOption> select [<generated>_2]).FirstOrDefault..."' uses First/FirstOrDefault operation without OrderBy and filter which may lead to unpredictable results.

@@ -80,7 +80,11 @@ namespace SidekaApi.ViewModels
 
         public SidekaDiff(JObject jObject)
         {
-            Total = (int)jObject["total"];
+            if (jObject["total"] != null)
+                Total = (int)jObject["total"];
+            else
+                Total = 0;
+
             Added = SidekaContentViewModel.ParseData((JArray)jObject["added"]);
             Modified = SidekaContentViewModel.ParseData((JArray)jObject["modified"]);
             Deleted = SidekaContentViewModel.ParseData((JArray)jObject["deleted"]);
