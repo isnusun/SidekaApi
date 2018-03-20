@@ -15,6 +15,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SidekaApi.ViewModels;
 using System.Diagnostics;
+using Microsoft.AspNetCore.Http;
 
 namespace SidekaApi.Controllers
 {
@@ -176,7 +177,6 @@ namespace SidekaApi.Controllers
 
             sw.Stop();
             await Logs((int)auth["user_id"], desaId, "", "get_content", contentType, contentSubtype, sw.Elapsed.Milliseconds);
-
             return Ok(content);
         }
 

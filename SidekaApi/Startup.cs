@@ -1,15 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using SidekaApi.Models;
 using Microsoft.EntityFrameworkCore;
+using SidekaApi.Models;
 
 namespace SidekaApi
 {
@@ -35,6 +29,8 @@ namespace SidekaApi
 
             services.AddMvc();
 
+            services.AddResponseCompression();
+
             services.AddDbContext<SidekaDbContext>(
                 opts => opts.UseMySql(Configuration.GetConnectionString("DefaultConnection")));
         }
@@ -47,6 +43,8 @@ namespace SidekaApi
                 app.UseDeveloperExceptionPage();
             }
 
+            app.UseResponseBuffering();
+            app.UseResponseCompression();
             app.UseMvc();
         }
     }
