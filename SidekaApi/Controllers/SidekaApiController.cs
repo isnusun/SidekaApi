@@ -294,27 +294,22 @@ namespace SidekaApi.Controllers
 
             Dictionary<string, object> diffs = null;
 
-            if (sizeComparison["contentSize"] > sizeComparison["diffSize"])
+            if (sidekaContent.ChangeId == clientChangeId)
             {
-                if (clientChangeId == 0)
-                    returnData.Add("data", content["data"]);
-                else if (sidekaContent.ChangeId == clientChangeId)
-                    returnData.Add("diffs", new List<object>());
-                else
-                {
-                    diffs = await GetDiffsNewerThanClient(desaId, contentType, contentSubtype,
-                        clientChangeId, (JObject)content["columns"]);
-
-                    var sizes = CompareSizes(content["data"], diffs);
-
-                    returnData.Add("diffs", diffs);
-                }
+                returnData.Add("diffs", new List<object>());
             }
-            else
+            else if (sizeComparison["contentSize"] > sizeComparison["diffSize"])
             {
                 returnData.Add("data", content["data"]);
             }
+            else
+            {
+                diffs = await GetDiffsNewerThanClient(desaId, contentType, contentSubtype,
+                        clientChangeId, (JObject)content["columns"]);
 
+                returnData.Add("diffs", diffs);
+            }
+         
             sw.Stop();
             await Logs((int)auth["user_id"], desaId, "", "get_content", contentType, contentSubtype, sw.Elapsed.Milliseconds);
             return Ok(returnData);
@@ -593,6 +588,7 @@ namespace SidekaApi.Controllers
                     .OrderBy(sc => sc.ChangeId);
 
             var contents = await newerQuery.Select(sc => sc.Content).ToListAsync();
+
             foreach (var contentString in contents)
             {
                 var contentJObject = JsonConvert.DeserializeObject<JObject>(contentString);
@@ -645,11 +641,12 @@ namespace SidekaApi.Controllers
             var totalDiffSizeQuery = await contentQuery.SumAsync(sc => sc.DiffSize);
 
             var contentSizeQuery = await contentQuery.OrderByDescending(sc => sc.ChangeId)
+                    .Select(e => e.ContentSize)
                     .FirstOrDefaultAsync();
 
             return new Dictionary<string, int>()
             {
-                {"contentSize", contentSizeQuery != null ? contentSizeQuery.ContentSize.Value : 0},
+                {"contentSize", contentSizeQuery != null ? contentSizeQuery.Value : 0},
                 {"diffSize", totalDiffSizeQuery != null ? totalDiffSizeQuery.Value : 0}
             };
         }
