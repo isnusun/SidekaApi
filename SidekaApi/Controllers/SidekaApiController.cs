@@ -263,6 +263,8 @@ namespace SidekaApi.Controllers
 
             var sizeComparison = await GetSizeComparison(desaId, contentType, contentSubtype, clientChangeId);
 
+            Console.WriteLine("After comparing sizes {0}", sw.Elapsed);
+
             var contentQuery = dbContext.SidekaContent
                 .Where(sc => sc.DesaId == desaId)
                 .Where(sc => sc.Type == contentType)
@@ -273,6 +275,8 @@ namespace SidekaApi.Controllers
                 contentQuery = contentQuery.Where(sc => sc.Subtype == contentSubtype);
 
             var sidekaContent = await contentQuery.OrderByDescending(sc => sc.ChangeId).FirstOrDefaultAsync();
+
+            Console.WriteLine("After querying sd contents {0}", sw.Elapsed);
 
             if (sidekaContent == null)
                 return StatusCode((int)HttpStatusCode.NotFound, new Dictionary<string, string>());
@@ -309,9 +313,13 @@ namespace SidekaApi.Controllers
 
                 returnData.Add("diffs", diffs);
             }
-         
+
+            Console.WriteLine("After preparing return data {0}", sw.Elapsed);
+
             sw.Stop();
             await Logs((int)auth["user_id"], desaId, "", "get_content", contentType, contentSubtype, sw.Elapsed.Milliseconds);
+
+            Console.WriteLine("After inserting logs {0}", sw.Elapsed);
             return Ok(returnData);
         }
 
@@ -636,6 +644,7 @@ namespace SidekaApi.Controllers
             var contentQuery = dbContext.SidekaContent
                 .Where(sc => sc.DesaId == desaId)
                 .Where(sc => sc.Type == contentType)
+                .Where(sc => sc.Subtype == contentSubtype)
                 .Where(sc => sc.ChangeId > clientChangeId);
 
             var totalDiffSizeQuery = await contentQuery.SumAsync(sc => sc.DiffSize);
