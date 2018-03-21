@@ -21,21 +21,9 @@ namespace SidekaApi
 
             try
             {
-                if (args.Length > 0 && args[0] == "--update-sizes-penduduk")
+                if (args.Length > 0 && args[0] == "--update-sizes")
                 {
-                    UpdatePendudukSizesData();
-                }
-                else if (args.Length > 0 && args[0] == "--update-sizes-pemetaan")
-                {
-                    UpdatePemetaanSizesData();
-                }
-                else if (args.Length > 0 && args[0] == "--update-sizes-keuangan")
-                {
-                    UpdateKeuanganSizesData();
-                }
-                else if (args.Length > 0 && args[0] == "--update-sizes")
-                {
-                    Console.WriteLine("Please specify the command -penduduk or -pemetaan or -keuangan");
+                    UpdateSizes();
                 }
                 else
                 {
@@ -55,24 +43,9 @@ namespace SidekaApi
 
         public static void UpdateSizes()
         {
-            
-        }
-
-        public static void UpdatePendudukSizesData()
-        {
             var updater = new Updater();
             updater.Run("penduduk", null);
-        }
-
-        public static void UpdatePemetaanSizesData()
-        {
-            var updater = new Updater();
             updater.Run("pemetaan", null);
-        }
-
-        public static void UpdateKeuanganSizesData()
-        {
-            var updater = new Updater();
             updater.Run("keuangan", null);
         }
 
