@@ -282,6 +282,7 @@ namespace SidekaApi.Controllers
                 return StatusCode((int)HttpStatusCode.NotFound, new Dictionary<string, string>());
 
             var content = JsonConvert.DeserializeObject<JObject>(sidekaContent.Content);
+            Console.WriteLine("After deserialized {0}", sw.Elapsed);
 
             if (sidekaContent.ApiVersion == "1.0")
                 content["columns"] = JArray.FromObject(new string[] { "nik", "nama_penduduk", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "pendidikan", "agama", "status_kawin", "pekerjaan", "pekerjaan_ped", "kewarganegaraan", "kompetensi", "no_telepon", "email", "no_kitas", "no_paspor", "golongan_darah", "status_penduduk", "status_tinggal", "kontrasepsi", "difabilitas", "no_kk", "nama_ayah", "nama_ibu", "hubungan_keluarga", "nama_dusun", "rw", "rt", "alamat_jalan" });
@@ -310,7 +311,7 @@ namespace SidekaApi.Controllers
             {
                 diffs = await GetDiffsNewerThanClient(desaId, contentType, contentSubtype,
                         clientChangeId, (JObject)content["columns"]);
-
+                Console.WriteLine("After get diff {0}", sw.Elapsed);
                 returnData.Add("diffs", diffs);
             }
 
