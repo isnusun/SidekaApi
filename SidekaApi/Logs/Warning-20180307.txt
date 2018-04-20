@@ -1,4 +1,0 @@
-2018-03-07 14:46:19.805 +07:00 [Warning] Query: '"(from WordpressOption <generated>_2 in DbSet<WordpressOption> select [<generated>_2]).FirstOrDefault..."' uses First/FirstOrDefault operation without OrderBy and filter which may lead to unpredictable results.
-2018-03-07 14:46:19.916 +07:00 [Warning] Query: '"(from WordpressOption <generated>_2 in DbSet<WordpressOption> select [<generated>_2]).FirstOrDefault..."' uses First/FirstOrDefault operation without OrderBy and filter which may lead to unpredictable results.
-2018-03-07 14:48:20.952 +07:00 [Warning] The LINQ expression '"DefaultIfEmpty(__p_2)"' could not be translated and will be evaluated locally.
-2018-03-07 14:48:20.960 +07:00 [Warning] The LINQ expression '"Max()"' could not be translated and will be evaluated locally.
