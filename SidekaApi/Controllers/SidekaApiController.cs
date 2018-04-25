@@ -274,7 +274,10 @@ namespace SidekaApi.Controllers
             if (!string.IsNullOrWhiteSpace(contentSubtype))
                 contentQuery = contentQuery.Where(sc => sc.Subtype == contentSubtype);
 
-            var sidekaContent = await contentQuery.OrderByDescending(sc => sc.ChangeId).FirstOrDefaultAsync();
+            var contentId = await contentQuery.OrderByDescending(sc => sc.ChangeId).Select(sc => sc.Id).FirstOrDefaultAsync();
+            SidekaContent sidekaContent = null;
+            if (contentId != 0)
+                sidekaContent = await dbContext.SidekaContent.FindAsync(contentId);
 
             Console.WriteLine("After querying sd contents {0}", sw.Elapsed);
 
