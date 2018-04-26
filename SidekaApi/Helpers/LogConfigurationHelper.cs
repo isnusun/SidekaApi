@@ -23,10 +23,10 @@ namespace SidekaApi.Helpers
         {
             return logger
                 .WriteTo.Logger(l => l
-                    .MinimumLevel.Warning()
-                    .WriteTo.RollingFile("./Logs/Warning-{Date}.txt"))
+                    .MinimumLevel.Information()
+                    .WriteTo.RollingFile("./Logs/Output-{Date}.txt", retainedFileCountLimit: 7))
                 .WriteTo.Logger(l => l
-                    .MinimumLevel.Error()
+                    .MinimumLevel.Warning()
                     .WriteTo.RollingFile("./Logs/Error-{Date}.txt"));
         }
 
