@@ -275,14 +275,11 @@ namespace SidekaApi.Controllers
                 contentQuery = contentQuery.Where(sc => sc.Subtype == contentSubtype);
 
             var contentId = await contentQuery.OrderByDescending(sc => sc.ChangeId).Select(sc => sc.Id).FirstOrDefaultAsync();
-            SidekaContent sidekaContent = null;
-            if (contentId != 0)
-                sidekaContent = await dbContext.SidekaContent.FindAsync(contentId);
-
-            Console.WriteLine("After querying sd contents {0}", sw.Elapsed);
-
-            if (sidekaContent == null)
+            if(contentId == 0)
                 return StatusCode((int)HttpStatusCode.NotFound, new Dictionary<string, string>());
+
+            var sidekaContent = await dbContext.SidekaContent.FindAsync(contentId);
+            Console.WriteLine("After querying sd contents {0}", sw.Elapsed);
 
             dynamic content = JsonConvert.DeserializeObject<JObject>(sidekaContent.Content);
             Console.WriteLine("After deserialized {0}", sw.Elapsed);

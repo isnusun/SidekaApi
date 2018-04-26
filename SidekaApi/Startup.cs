@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using SidekaApi.Models;
+using SidekaApi.Helpers.Buffering;
 
 namespace SidekaApi
 {
@@ -45,6 +46,7 @@ namespace SidekaApi
 
             app.UseResponseBuffering();
             app.UseResponseCompression();
+            app.UseMiddleware<DecompressedBufferingMiddleware>();
             app.UseMvc();
         }
     }
