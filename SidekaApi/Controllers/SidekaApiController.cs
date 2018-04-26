@@ -16,6 +16,7 @@ using Newtonsoft.Json.Linq;
 using SidekaApi.ViewModels;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
+using Serilog;
 
 namespace SidekaApi.Controllers
 {
@@ -263,7 +264,7 @@ namespace SidekaApi.Controllers
 
             var sizeComparison = await GetSizeComparison(desaId, contentType, contentSubtype, clientChangeId);
 
-            Console.WriteLine("After comparing sizes {0}", sw.Elapsed);
+            Log.Information("After comparing sizes {0}", sw.Elapsed);
 
             var contentQuery = dbContext.SidekaContent
                 .Where(sc => sc.DesaId == desaId)
@@ -279,10 +280,10 @@ namespace SidekaApi.Controllers
                 return StatusCode((int)HttpStatusCode.NotFound, new Dictionary<string, string>());
 
             var sidekaContent = await dbContext.SidekaContent.FindAsync(contentId);
-            Console.WriteLine("After querying sd contents {0}", sw.Elapsed);
+            Log.Information("After querying sd contents {0}", sw.Elapsed);
 
             dynamic content = JsonConvert.DeserializeObject<JObject>(sidekaContent.Content);
-            Console.WriteLine("After deserialized {0}", sw.Elapsed);
+            Log.Information("After deserialized {0}", sw.Elapsed);
 
             if (sidekaContent.ApiVersion == "1.0")
                 content["columns"] = JArray.FromObject(new string[] { "nik", "nama_penduduk", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "pendidikan", "agama", "status_kawin", "pekerjaan", "pekerjaan_ped", "kewarganegaraan", "kompetensi", "no_telepon", "email", "no_kitas", "no_paspor", "golongan_darah", "status_penduduk", "status_tinggal", "kontrasepsi", "difabilitas", "no_kk", "nama_ayah", "nama_ibu", "hubungan_keluarga", "nama_dusun", "rw", "rt", "alamat_jalan" });
@@ -311,16 +312,16 @@ namespace SidekaApi.Controllers
             {
                 diffs = await GetDiffsNewerThanClient(desaId, contentType, contentSubtype,
                         clientChangeId, (JObject)content["columns"]);
-                Console.WriteLine("After get diff {0}", sw.Elapsed);
+                Log.Information("After get diff {0}", sw.Elapsed);
                 returnData.Add("diffs", diffs);
             }
 
-            Console.WriteLine("After preparing return data {0}", sw.Elapsed);
+            Log.Information("After preparing return data {0}", sw.Elapsed);
 
             sw.Stop();
             await Logs((int)auth["user_id"], desaId, "", "get_content", contentType, contentSubtype, sw.Elapsed.Milliseconds);
 
-            Console.WriteLine("After inserting logs {0}", sw.Elapsed);
+            Log.Information("After inserting logs {0}", sw.Elapsed);
             return Ok(returnData);
         }
 
