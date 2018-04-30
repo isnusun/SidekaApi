@@ -17,6 +17,10 @@ using SidekaApi.ViewModels;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Serilog;
+using System.Data.Common;
+using System.Data.SqlClient;
+using System.Data;
+using MySql.Data.MySqlClient;
 
 namespace SidekaApi.Controllers
 {
@@ -451,8 +455,6 @@ namespace SidekaApi.Controllers
             var maxChangeId = await maxChangeIdQuery.Select(sc => sc.ChangeId).DefaultIfEmpty(0).MaxAsync();
 
             // TODO: This is risky!! Consider changing change_id column to serial or autoincrement
-            var newChangeId = maxChangeId + 1;
-
             var newContent = new SidekaContentViewModel();        
 
             // Initialize new content to be saved
@@ -548,6 +550,8 @@ namespace SidekaApi.Controllers
             var contentSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(newContent.Data));
             var diffSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(diffs));
 
+            int newChangeId = await getNextChangeIdAsync(desaId, contentType, contentSubtype);
+
             var sidekaContent = new SidekaContent
             {
                 DesaId = desaId,
@@ -578,6 +582,33 @@ namespace SidekaApi.Controllers
             await Logs((int)auth["user_id"], desaId, "", "save_content", contentType, contentSubtype, sw.Elapsed.Milliseconds);
 
             return Ok(result);
+        }
+
+        private async Task<int> getNextChangeIdAsync(int desaId, string contentType, string contentSubType)
+        {
+            var conn = dbContext.Database.GetDbConnection();
+            try
+            {
+                await conn.OpenAsync();
+                using (var command = conn.CreateCommand())
+                {
+                    command.CommandType = System.Data.CommandType.StoredProcedure;
+                    command.CommandText = "sd_get_content_serial";
+
+                    command.Parameters.Add(new MySqlParameter("@p_desa_id", SqlDbType.Int) { Value = desaId });
+                    command.Parameters.Add(new MySqlParameter("@p_type", SqlDbType.VarChar) { Value = contentType });
+                    command.Parameters.Add(new MySqlParameter("@p_subtype", SqlDbType.VarChar) { Value = contentSubType });
+                    var output  = new MySqlParameter("@result", SqlDbType.Int) { Direction = ParameterDirection.Output };
+                    command.Parameters.Add(output);
+
+                    await command.ExecuteNonQueryAsync();
+                    return (int) output.Value;
+                }
+            }
+            finally
+            {
+                conn.Close();
+            }
         }
 
         private async Task<Dictionary<string, object>> GetDiffsNewerThanClient(int desaId, string contentType, 
