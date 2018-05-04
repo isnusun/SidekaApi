@@ -17,6 +17,7 @@ namespace SidekaApi.Models
         public DbSet<SidekaDesa> SidekaDesa { get; set; }
         public DbSet<SidekaLog> SidekaLog { get; set; }
         public DbSet<SidekaToken> SidekaToken { get; set; }
+        public DbSet<Pbdt2015> Pbdt2015 { get; set; }
         public DbSet<WordpressUser> WordpressUser { get; set; }
         public DbSet<WordpressUserMeta> WordpressUserMeta { get; set; }
         public DbSet<WordpressOption> WordpressOption { get; set; }
