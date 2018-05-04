@@ -85,17 +85,7 @@ namespace SidekaApi.Controllers
             dbContext.SidekaToken.Add(sidekaToken);
             await dbContext.SaveChangesAsync();
 
-            var result = new Dictionary<string, object>()
-            {
-                { "success", success },
-                { "desa_id", desaId },
-                { "token", token },
-                { "user_id", user.ID },
-                { "user_nicename", user.UserNicename },
-                // TODO: Change apiVersion -> api_version. Potential bug?
-                { "api_version", configuration.GetValue<string>("ApiVersion") }
-            };
-
+            var result = GetAuth(desaId, token);
             await FillAuth(result);
             return Ok(result);
         }
@@ -857,9 +847,11 @@ namespace SidekaApi.Controllers
             return null;
         }
 
-        private Dictionary<string, object> GetAuth(int desaId)
+        private Dictionary<string, object> GetAuth(int desaId, string token=null)
         {
-            var token = GetValueFromHeaders("X-Auth-Token");
+            if (token == null)
+                token = GetValueFromHeaders("X-Auth-Token");
+
             if (token == null)
                 return null;
 
