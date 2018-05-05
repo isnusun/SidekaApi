@@ -21,6 +21,7 @@ using System.Data.Common;
 using System.Data.SqlClient;
 using System.Data;
 using MySql.Data.MySqlClient;
+using System.Collections.Concurrent;
 
 namespace SidekaApi.Controllers
 {
@@ -29,6 +30,8 @@ namespace SidekaApi.Controllers
     {
         private SidekaDbContext dbContext;
         private IConfiguration configuration;
+
+        private ConcurrentDictionary<String, object> writeLocks = new ConcurrentDictionary<string, object>();
 
         public SidekaApiController(SidekaDbContext dbContext, IConfiguration configuration)
         {
@@ -82,17 +85,7 @@ namespace SidekaApi.Controllers
             dbContext.SidekaToken.Add(sidekaToken);
             await dbContext.SaveChangesAsync();
 
-            var result = new Dictionary<string, object>()
-            {
-                { "success", success },
-                { "desa_id", desaId },
-                { "token", token },
-                { "user_id", user.ID },
-                { "user_nicename", user.UserNicename },
-                // TODO: Change apiVersion -> api_version. Potential bug?
-                { "api_version", configuration.GetValue<string>("ApiVersion") }
-            };
-
+            var result = GetAuth(desaId, token);
             await FillAuth(result);
             return Ok(result);
         }
@@ -126,7 +119,7 @@ namespace SidekaApi.Controllers
         [HttpGet("check_auth/{desaId}")]
         public async Task<IActionResult> CheckAuth(int desaId)
         {
-            var auth = await GetAuth(desaId);
+            var auth = GetAuth(desaId);
             if (auth == null)
                 return Ok(new Dictionary<string, string>());
             await FillAuth(auth);
@@ -136,7 +129,7 @@ namespace SidekaApi.Controllers
         [HttpGet("content/{desaId}/{contentType}/subtypes")]
         public async Task<IActionResult> GetContentSubtype(int desaId, string contentType)
         {
-            var auth = await GetAuth(desaId);
+            var auth = GetAuth(desaId);
             if (auth == null)
                 return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>());
 
@@ -157,7 +150,7 @@ namespace SidekaApi.Controllers
             Stopwatch sw = new Stopwatch();
             sw.Start();
 
-            var auth = await GetAuth(desaId);
+            var auth = GetAuth(desaId);
             if (auth == null)
                 return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>());
 
@@ -193,7 +186,7 @@ namespace SidekaApi.Controllers
             Stopwatch sw = new Stopwatch();
             sw.Start();
 
-            var auth = await GetAuth(desaId);
+            var auth = GetAuth(desaId);
             if (auth == null)
                 return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, object>() { { "success", false } });
 
@@ -255,7 +248,7 @@ namespace SidekaApi.Controllers
             Stopwatch sw = new Stopwatch();
             sw.Start();
 
-            var auth = await GetAuth(desaId);
+            var auth = GetAuth(desaId);
             if (auth == null)
                 return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>() { { "message", "Invalid or no token" } });
 
@@ -314,7 +307,7 @@ namespace SidekaApi.Controllers
             }
             else
             {
-                diffs = await GetDiffsNewerThanClient(desaId, contentType, contentSubtype,
+                diffs = GetDiffsNewerThanClient(desaId, contentType, contentSubtype,
                         clientChangeId, (JObject)content["columns"]);
                 Log.Information("After get diff {0}", sw.Elapsed);
                 returnData.Add("diffs", diffs);
@@ -392,204 +385,208 @@ namespace SidekaApi.Controllers
             Stopwatch sw = new Stopwatch();
             sw.Start();
 
-            var auth = await GetAuth(desaId);
-            if (auth == null)
-                return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>() { { "message", "Invalid or no token" } });
+            string lockName = desaId+"_"+contentType+"_"+contentSubtype;
+            object writeLock = writeLocks.GetOrAdd(lockName, new object());
+            lock(writeLock){
+                var auth = GetAuth(desaId);
+                if (auth == null)
+                    return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>() { { "message", "Invalid or no token" } });
 
-            var permission = contentType;
-            if (new string[] { "perencanaan", "penganggaran", "spp", "penerimaan" }.Contains(contentType))
-                permission = "keuangan";
-            var roles = (List<string>)auth["roles"];
-            if (!roles.Contains("administrator") && !roles.Contains(permission))
-                return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>() { { "message", "Your account doesn't have the permission" } });
+                var permission = contentType;
+                if (new string[] { "perencanaan", "penganggaran", "spp", "penerimaan" }.Contains(contentType))
+                    permission = "keuangan";
+                var roles = (List<string>)auth["roles"];
+                if (!roles.Contains("administrator") && !roles.Contains(permission))
+                    return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>() { { "message", "Your account doesn't have the permission" } });
 
-            var content = new SidekaContentViewModel(contentJObject);
+                var content = new SidekaContentViewModel(contentJObject);
 
-            // Validate
-            foreach (var column in content.Columns)
-            {
-                if (content.Diffs != null && content.Diffs.ContainsKey(column.Key))
+                // Validate
+                foreach (var column in content.Columns)
                 {
-                    var index = 0;
-                    foreach (var diff in content.Diffs[column.Key])
+                    if (content.Diffs != null && content.Diffs.ContainsKey(column.Key))
                     {
-                        var location = string.Format("Diff {0} ({1}) tab {2}", index, "added", column.Key);
-                        var invalid = Validate(column.Value, diff.Added, location);
-                        if (invalid != null)
-                            return invalid;
-
-                        location = string.Format("Diff {0} ({1}) tab {2}", index, "modified", column.Key);
-                        invalid = Validate(column.Value, diff.Modified, location);
-                        if (invalid != null)
-                            return invalid;
-
-                        location = string.Format("Diff {0} ({1}) tab {2}", index, "deleted", column.Key);
-                        invalid = Validate(column.Value, diff.Deleted, location);
-                        if (invalid != null)
-                            return invalid;
-                    }
-                }
-
-                if (content.Data != null && content.Data.ContainsKey(column.Key))
-                {
-                    var location = string.Format("Data tab {0}", column.Key);
-                    var invalid = Validate(column.Value, content.Data[column.Key], location);
-                    if (invalid != null)
-                        return invalid;
-                }
-            }
-
-            var clientChangeId = 0;
-            var changeId = QueryStringHelper.GetQueryString<int>(Request.Query, "changeId", 0);
-            if (changeId > 0)
-                clientChangeId = changeId;
-
-            // Find max change id
-            var maxChangeIdQuery = dbContext.SidekaContent
-                .Where(sc => sc.DesaId == desaId)
-                .Where(sc => sc.Type == contentType);
-
-            if (!string.IsNullOrWhiteSpace(contentSubtype))
-                maxChangeIdQuery = maxChangeIdQuery.Where(sc => sc.Subtype == contentSubtype);
-
-            var maxChangeId = await maxChangeIdQuery.Select(sc => sc.ChangeId).DefaultIfEmpty(0).MaxAsync();
-
-            // TODO: This is risky!! Consider changing change_id column to serial or autoincrement
-            var newContent = new SidekaContentViewModel();        
-
-            // Initialize new content to be saved
-            foreach (var column in content.Columns)
-            {
-                newContent.Data[column.Key] = new List<object>().ToArray();
-                newContent.Columns[column.Key] = column.Value;
-                if (content.Diffs != null && content.Diffs.ContainsKey(column.Key))
-                    newContent.Diffs[column.Key] = content.Diffs[column.Key];
-                else
-                    newContent.Diffs[column.Key] = new List<SidekaDiff>().ToArray();
-            }
-
-            var latestContentQuery = dbContext.SidekaContent
-                .Where(sc => sc.DesaId == desaId)
-                .Where(sc => sc.Type == contentType);
-
-            if (!string.IsNullOrWhiteSpace(contentSubtype))
-                latestContentQuery = latestContentQuery.Where(sc => sc.Subtype == contentSubtype);
-
-            var latestContentString = await latestContentQuery
-                .OrderByDescending(sc => sc.ChangeId)
-                .Select(sc => sc.Content)
-                .FirstOrDefaultAsync();
-
-            JObject latestContentJObject = null;
-            if (string.IsNullOrWhiteSpace(latestContentString))
-            {
-                latestContentJObject = new JObject
-                {
-                    { "data", new JObject() },
-                    { "columns", contentJObject["columns"] }
-                };
-            }
-            else
-            {
-                latestContentJObject = JsonConvert.DeserializeObject<JObject>(latestContentString);
-            }
-
-            var diffs = await GetDiffsNewerThanClient(desaId, contentType, contentSubtype, clientChangeId, (JObject)contentJObject["columns"]);
-
-            if (latestContentJObject["data"] is JArray && contentType == "penduduk")
-                newContent.Data["penduduk"] = MergeDiffs(newContent.Columns["penduduk"], newContent.Diffs["penduduk"], new List<object>().ToArray());
-            else
-            {
-                var latestContent = new SidekaContentViewModel(latestContentJObject);
-                foreach(var column in content.Columns)
-                {
-                    // Initialize so the latest content have the same tab with the posted content
-                    if (!latestContent.Columns.ContainsKey(column.Key))
-                        latestContent.Columns[column.Key] = column.Value;
-                    if (!latestContent.Data.ContainsKey(column.Key))
-                        latestContent.Data[column.Key] = new List<object>().ToArray();
-
-                    if (content.Data != null && content.Data[column.Key] != null && 
-                        new string[] { "perencanaan", "penganggaran", "penerimaan", "spp" }.Contains(contentType))
-                    {
-                        // Special case for client who posted data instead of diffs
-                        newContent.Data[column.Key] = content.Data[column.Key];
-
-                        // Add new diffs to show that the content is rewritten
-                        var sidekaDiff = new SidekaDiff
+                        var index = 0;
+                        foreach (var diff in content.Diffs[column.Key])
                         {
-                            Added = new List<object>().ToArray(),
-                            Modified = new List<object>().ToArray(),
-                            Deleted = new List<object>().ToArray(),
-                            Total = 0,
-                            Rewritten = true
-                        };
+                            var location = string.Format("Diff {0} ({1}) tab {2}", index, "added", column.Key);
+                            var invalid = Validate(column.Value, diff.Added, location);
+                            if (invalid != null)
+                                return invalid;
 
-                        newContent.Diffs[column.Key].Append(sidekaDiff);
+                            location = string.Format("Diff {0} ({1}) tab {2}", index, "modified", column.Key);
+                            invalid = Validate(column.Value, diff.Modified, location);
+                            if (invalid != null)
+                                return invalid;
+
+                            location = string.Format("Diff {0} ({1}) tab {2}", index, "deleted", column.Key);
+                            invalid = Validate(column.Value, diff.Deleted, location);
+                            if (invalid != null)
+                                return invalid;
+                        }
                     }
-                    else if (newContent.Diffs[column.Key].Length > 0)
+
+                    if (content.Data != null && content.Data.ContainsKey(column.Key))
                     {
-                        // There's diffs in the posted content for this tab, apply them to latest data
-                        var latestColumns = latestContent.Columns[column.Key];
-                        var transformedLatestData = TransformData(
-                            latestContentJObject["columns"][column.Key], 
-                            contentJObject["columns"][column.Key], 
-                            latestContent.Data[column.Key]);
-                        var mergedData = MergeDiffs(column.Value, content.Diffs[column.Key], transformedLatestData);
-                        newContent.Data[column.Key] = mergedData;
-                        newContent.Columns[column.Key] = column.Value;
-                    }
-                    else
-                    {
-                        // There's no diffs in the posted content for this tab, use the old data
-                        newContent.Data[column.Key] = latestContent.Data[column.Key];
+                        var location = string.Format("Data tab {0}", column.Key);
+                        var invalid = Validate(column.Value, content.Data[column.Key], location);
+                        if (invalid != null)
+                            return invalid;
                     }
                 }
+
+                var clientChangeId = 0;
+                var changeId = QueryStringHelper.GetQueryString<int>(Request.Query, "changeId", 0);
+                if (changeId > 0)
+                    clientChangeId = changeId;
+
+                // Find max change id
+                var maxChangeIdQuery = dbContext.SidekaContent
+                    .Where(sc => sc.DesaId == desaId)
+                    .Where(sc => sc.Type == contentType);
+
+                if (!string.IsNullOrWhiteSpace(contentSubtype))
+                    maxChangeIdQuery = maxChangeIdQuery.Where(sc => sc.Subtype == contentSubtype);
+
+                var maxChangeId = maxChangeIdQuery.Select(sc => sc.ChangeId).DefaultIfEmpty(0).Max();
+
+                // TODO: This is risky!! Consider changing change_id column to serial or autoincrement
+                var newContent = new SidekaContentViewModel();        
+
+                // Initialize new content to be saved
+                foreach (var column in content.Columns)
+                {
+                    newContent.Data[column.Key] = new List<object>().ToArray();
+                    newContent.Columns[column.Key] = column.Value;
+                    if (content.Diffs != null && content.Diffs.ContainsKey(column.Key))
+                        newContent.Diffs[column.Key] = content.Diffs[column.Key];
+                    else
+                        newContent.Diffs[column.Key] = new List<SidekaDiff>().ToArray();
+                }
+
+                var latestContentQuery = dbContext.SidekaContent
+                    .Where(sc => sc.DesaId == desaId)
+                    .Where(sc => sc.Type == contentType);
+
+                if (!string.IsNullOrWhiteSpace(contentSubtype))
+                    latestContentQuery = latestContentQuery.Where(sc => sc.Subtype == contentSubtype);
+
+                var latestContentString = latestContentQuery
+                    .OrderByDescending(sc => sc.ChangeId)
+                    .Select(sc => sc.Content)
+                    .FirstOrDefault();
+
+                JObject latestContentJObject = null;
+                if (string.IsNullOrWhiteSpace(latestContentString))
+                {
+                    latestContentJObject = new JObject
+                    {
+                        { "data", new JObject() },
+                        { "columns", contentJObject["columns"] }
+                    };
+                }
+                else
+                {
+                    latestContentJObject = JsonConvert.DeserializeObject<JObject>(latestContentString);
+                }
+
+                var diffs = GetDiffsNewerThanClient(desaId, contentType, contentSubtype, clientChangeId, (JObject)contentJObject["columns"]);
+
+                if (latestContentJObject["data"] is JArray && contentType == "penduduk")
+                    newContent.Data["penduduk"] = MergeDiffs(newContent.Columns["penduduk"], newContent.Diffs["penduduk"], new List<object>().ToArray());
+                else
+                {
+                    var latestContent = new SidekaContentViewModel(latestContentJObject);
+                    foreach(var column in content.Columns)
+                    {
+                        // Initialize so the latest content have the same tab with the posted content
+                        if (!latestContent.Columns.ContainsKey(column.Key))
+                            latestContent.Columns[column.Key] = column.Value;
+                        if (!latestContent.Data.ContainsKey(column.Key))
+                            latestContent.Data[column.Key] = new List<object>().ToArray();
+
+                        if (content.Data != null && content.Data[column.Key] != null && 
+                            new string[] { "perencanaan", "penganggaran", "penerimaan", "spp" }.Contains(contentType))
+                        {
+                            // Special case for client who posted data instead of diffs
+                            newContent.Data[column.Key] = content.Data[column.Key];
+
+                            // Add new diffs to show that the content is rewritten
+                            var sidekaDiff = new SidekaDiff
+                            {
+                                Added = new List<object>().ToArray(),
+                                Modified = new List<object>().ToArray(),
+                                Deleted = new List<object>().ToArray(),
+                                Total = 0,
+                                Rewritten = true
+                            };
+
+                            newContent.Diffs[column.Key].Append(sidekaDiff);
+                        }
+                        else if (newContent.Diffs[column.Key].Length > 0)
+                        {
+                            // There's diffs in the posted content for this tab, apply them to latest data
+                            var latestColumns = latestContent.Columns[column.Key];
+                            var transformedLatestData = TransformData(
+                                latestContentJObject["columns"][column.Key], 
+                                contentJObject["columns"][column.Key], 
+                                latestContent.Data[column.Key]);
+                            var mergedData = MergeDiffs(column.Value, content.Diffs[column.Key], transformedLatestData);
+                            newContent.Data[column.Key] = mergedData;
+                            newContent.Columns[column.Key] = column.Value;
+                        }
+                        else
+                        {
+                            // There's no diffs in the posted content for this tab, use the old data
+                            newContent.Data[column.Key] = latestContent.Data[column.Key];
+                        }
+                    }
+                }
+
+                var contentSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(newContent.Data));
+                var diffSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(diffs));
+
+                int newChangeId = GetNextChangeId(desaId, contentType, contentSubtype);
+
+                var sidekaContent = new SidekaContent
+                {
+                    DesaId = desaId,
+                    Type = contentType,
+                    Subtype = contentSubtype,
+                    Content = JsonConvert.SerializeObject(newContent),
+                    DateCreated = DateTime.Now,
+                    CreatedBy = (int)auth["user_id"],
+                    ChangeId = newChangeId,
+                    ApiVersion = configuration.GetValue<string>("ApiVersion"),
+                    ContentSize = contentSize,
+                    DiffSize = diffSize
+                };
+
+                dbContext.Add(sidekaContent);
+                dbContext.SaveChanges();
+
+                var result = new Dictionary<string, object>()
+                {
+                    { "success", true },
+                    { "changeId", newChangeId },
+                    { "change_id", newChangeId },
+                    { "diffs", diffs },
+                    { "columns", content.Columns },
+                };
+
+                sw.Stop();
+                Logs((int)auth["user_id"], desaId, "", "save_content", contentType, contentSubtype, sw.Elapsed.Milliseconds);
+
+                return Ok(result);
             }
-
-            var contentSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(newContent.Data));
-            var diffSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(diffs));
-
-            int newChangeId = await getNextChangeIdAsync(desaId, contentType, contentSubtype);
-
-            var sidekaContent = new SidekaContent
-            {
-                DesaId = desaId,
-                Type = contentType,
-                Subtype = contentSubtype,
-                Content = JsonConvert.SerializeObject(newContent),
-                DateCreated = DateTime.Now,
-                CreatedBy = (int)auth["user_id"],
-                ChangeId = newChangeId,
-                ApiVersion = configuration.GetValue<string>("ApiVersion"),
-                ContentSize = contentSize,
-                DiffSize = diffSize
-            };
-
-            dbContext.Add(sidekaContent);
-            await dbContext.SaveChangesAsync();
-
-            var result = new Dictionary<string, object>()
-            {
-                { "success", true },
-                { "changeId", newChangeId },
-                { "change_id", newChangeId },
-                { "diffs", diffs },
-                { "columns", content.Columns },
-            };
-
-            sw.Stop();
-            await Logs((int)auth["user_id"], desaId, "", "save_content", contentType, contentSubtype, sw.Elapsed.Milliseconds);
-
-            return Ok(result);
         }
 
-        private async Task<int> getNextChangeIdAsync(int desaId, string contentType, string contentSubType)
+        private int GetNextChangeId(int desaId, string contentType, string contentSubType)
         {
             var conn = dbContext.Database.GetDbConnection();
             try
             {
-                await conn.OpenAsync();
+                conn.Open();
                 using (var command = conn.CreateCommand())
                 {
                     command.CommandType = System.Data.CommandType.StoredProcedure;
@@ -601,7 +598,7 @@ namespace SidekaApi.Controllers
                     var output  = new MySqlParameter("@result", SqlDbType.Int) { Direction = ParameterDirection.Output };
                     command.Parameters.Add(output);
 
-                    await command.ExecuteNonQueryAsync();
+                    command.ExecuteNonQuery();
                     return (int) output.Value;
                 }
             }
@@ -611,7 +608,7 @@ namespace SidekaApi.Controllers
             }
         }
 
-        private async Task<Dictionary<string, object>> GetDiffsNewerThanClient(int desaId, string contentType, 
+        private Dictionary<string, object> GetDiffsNewerThanClient(int desaId, string contentType, 
             string contentSubtype, int clientChangeId, JObject clientColumns)
         {
             var result = new Dictionary<string, object>();
@@ -628,7 +625,7 @@ namespace SidekaApi.Controllers
                     .Where(sc => sc.Subtype == contentSubtype)
                     .OrderBy(sc => sc.ChangeId);
 
-            var contents = await newerQuery.Select(sc => sc.Content).ToListAsync();
+            var contents = newerQuery.Select(sc => sc.Content).ToList();
 
             foreach (var contentString in contents)
             {
@@ -850,22 +847,24 @@ namespace SidekaApi.Controllers
             return null;
         }
 
-        private async Task<Dictionary<string, object>> GetAuth(int desaId)
+        private Dictionary<string, object> GetAuth(int desaId, string token=null)
         {
-            var token = GetValueFromHeaders("X-Auth-Token");
+            if (token == null)
+                token = GetValueFromHeaders("X-Auth-Token");
+
             if (token == null)
                 return null;
 
-            var sidekaToken = await dbContext.SidekaToken
+            var sidekaToken = dbContext.SidekaToken
                 .Where(t => t.Token == token && t.DesaId == desaId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefault();
             if (sidekaToken == null)
                 return null;
 
             var capabilities = string.Format("wp_{0}_capabilities", sidekaToken.DesaId);
-            var userMeta = await dbContext.WordpressUserMeta
+            var userMeta = dbContext.WordpressUserMeta
                 .Where(wum => wum.UserId == sidekaToken.UserId && wum.MetaKey == capabilities)
-                .FirstOrDefaultAsync();
+                .FirstOrDefault();
             var roles = (Hashtable)new PhpSerializer().Deserialize(userMeta.MetaValue);
 
             var result = new Dictionary<string, object>
