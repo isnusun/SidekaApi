@@ -18,12 +18,26 @@ namespace SidekaApi
         public static void Main(string[] args)
         {
             Log.Logger = LogConfigurationHelper.GetConfiguration();
-
+            
             try
             {
+                var importer = new PbdtXlsxToSql();
+                importer.Run(@"D:\Documents", "22. SEMARANG", "33.22");
+
+                //var pbdtToSdContent = new PbdtToSdContent();
+                //pbdtToSdContent.run("33.22.20.2009", "2015");
+
                 if (args.Length > 0 && args[0] == "--update-sizes")
                 {
                     UpdateSizes();
+                }
+                else if (args.Length > 0 && args[0] == "--pbdt-import")
+                {
+                   
+                }
+                else if (args.Length > 0 && args[0] == "--pbdt-to-sdcontent")
+                {
+
                 }
                 else
                 {

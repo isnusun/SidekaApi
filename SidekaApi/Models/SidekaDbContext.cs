@@ -21,6 +21,7 @@ namespace SidekaApi.Models
         public DbSet<WordpressUser> WordpressUser { get; set; }
         public DbSet<WordpressUserMeta> WordpressUserMeta { get; set; }
         public DbSet<WordpressOption> WordpressOption { get; set; }
+        public DbSet<SidekaRegion> SidekaRegion { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {

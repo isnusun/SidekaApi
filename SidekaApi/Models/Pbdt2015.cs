@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace SidekaApi.Models {
+    [Table("SdPbdt2015")]
     public class Pbdt2015 {
 
         [Key]
@@ -13,7 +14,7 @@ namespace SidekaApi.Models {
 
         public bool IsImported { get; set; }
 
-        public string SidekaContentJson { get; set; }
+        public string Content { get; set; }
 
     }
 }
