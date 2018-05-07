@@ -57,9 +57,7 @@ namespace SidekaApi
         public static void UpdateSizes()
         {
             var updater = new Updater();
-            updater.Run("penduduk", null);
-            updater.Run("pemetaan", null);
-            updater.Run("keuangan", null);
+            updater.Run();
         }
 
         public static IWebHost BuildWebHost(string[] args) =>
