@@ -21,9 +21,6 @@ namespace SidekaApi
             
             try
             {
-                var importer = new PbdtXlsxToSql();
-                importer.Run(@"D:\Documents", "22. SEMARANG", "33.22");
-
                 //var pbdtToSdContent = new PbdtToSdContent();
                 //pbdtToSdContent.run("33.22.20.2009", "2015");
 
@@ -33,6 +30,8 @@ namespace SidekaApi
                 }
                 else if (args.Length > 0 && args[0] == "--pbdt-import")
                 {
+                    var importer = new PbdtXlsxToSql();
+                    importer.Run(@"D:\Documents", "22. SEMARANG", "33.22");
                    
                 }
                 else if (args.Length > 0 && args[0] == "--pbdt-to-sdcontent")
