@@ -544,7 +544,7 @@ namespace SidekaApi.Controllers
                 }
 
                 var contentSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(newContent.Data));
-                var diffSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(diffs));
+                var diffSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(newContent.Diffs));
 
                 int newChangeId = GetNextChangeId(desaId, contentType, contentSubtype);
 
@@ -781,7 +781,7 @@ namespace SidekaApi.Controllers
                         }
                         else
                         {
-                            if (((object[])data[i])[0] == ((object[])modified)[0])
+                            if (((object[])data[i])[0].Equals(((object[])modified)[0]))
                                 data[i] = modified;
                         }
                     }
@@ -800,7 +800,7 @@ namespace SidekaApi.Controllers
                         }
                         else
                         {
-                            if (((object[])data[i])[0] == ((object[])deleted)[0])
+                            if (((object[])data[i])[0].Equals(((object[])deleted)[0]))
                                 data.RemoveAt(i);
                         }
                     }
