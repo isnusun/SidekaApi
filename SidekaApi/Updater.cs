@@ -30,9 +30,9 @@ namespace SidekaApi
             dbContext = new SidekaDbContext(optionsBuilder.Options);
         }
 
-        public void Run(string contentType, string contentSubtype = null)
+        public void Run()
         {
-            Console.WriteLine("========= Updating Data {0} =========", contentType);
+            Console.WriteLine("========= Updating Data =========");
             Console.WriteLine("Fetching Desa");
 
             var desas = dbContext.SidekaDesa.ToList();
@@ -43,9 +43,7 @@ namespace SidekaApi
 
                 var contentQuery = dbContext.SidekaContent
                     .Where(sc => sc.DesaId == desa.BlogId)
-                    .Where(sc => sc.Type == contentType)
-                    .Where(sc => sc.ApiVersion == "2.0")
-                    .Where(sc => sc.Subtype == contentSubtype);
+                    .Where(sc => sc.ApiVersion == "2.0");
 
                 Console.WriteLine("Fetching Contents For Desa {0}-{1}", desa.BlogId, desa.Desa);
 
