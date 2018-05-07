@@ -301,7 +301,7 @@ namespace SidekaApi.Controllers
             {
                 returnData.Add("diffs", new List<object>());
             }
-            else if (sizeComparison["contentSize"] < sizeComparison["diffSize"])
+            else if (clientChangeId == 0 || sizeComparison["contentSize"] < sizeComparison["diffSize"])
             {
                 returnData.Add("data", content["data"]);
             }
