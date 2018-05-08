@@ -48,43 +48,51 @@ namespace SidekaApi
 
                 Console.WriteLine("Fetching Contents For Desa {0}-{1}", desa.BlogId, desa.Desa);
 
-                var sidekaContents = contentQuery.OrderByDescending(sc => sc.ChangeId).ToList();
+                var numberOfContents = contentQuery.Count();
                 var counter = 0;
-
-                foreach (var sidekaContent in sidekaContents)
+                var skip = 0;
+                while(counter < numberOfContents)
                 {
-                    counter += 1;
+                    Console.WriteLine("Fetching contents skip #{0} take 10", skip);
+                    var sidekaContents = contentQuery.OrderByDescending(sc => sc.ChangeId).Skip(skip).Take(10).ToList();
 
-                    Console.WriteLine("Processing Content #{0}", counter);
-
-                    var sidekaContentJObject = JsonConvert.DeserializeObject<JObject>(sidekaContent.Content);
-
-                    if (sidekaContent.ApiVersion == "1.0")
-                        sidekaContentJObject["columns"] = JArray.FromObject(new string[] { "nik", "nama_penduduk", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "pendidikan", "agama", "status_kawin", "pekerjaan", "pekerjaan_ped", "kewarganegaraan", "kompetensi", "no_telepon", "email", "no_kitas", "no_paspor", "golongan_darah", "status_penduduk", "status_tinggal", "kontrasepsi", "difabilitas", "no_kk", "nama_ayah", "nama_ibu", "hubungan_keluarga", "nama_dusun", "rw", "rt", "alamat_jalan" });
-
-                    try
+                    foreach (var sidekaContent in sidekaContents)
                     {
-                        Console.WriteLine("Calculating Sizes....");
+                        counter += 1;
 
-                        var content = new SidekaContentViewModel(sidekaContentJObject);
-                        var contentSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(content.Data));
-                        var diffSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(content.Diffs));
+                        Console.WriteLine("Processing Content #{0}", counter);
 
-                        Console.WriteLine("Desa {0}-Change Id {1}, Content Size {2}, Diff Size {3}", desa.Desa, sidekaContent.ChangeId, contentSize, diffSize);
-                        Console.WriteLine("Saving Size...");
+                        var sidekaContentJObject = JsonConvert.DeserializeObject<JObject>(sidekaContent.Content);
 
-                        sidekaContent.ContentSize = contentSize;
-                        sidekaContent.DiffSize = diffSize;
+                        if (sidekaContent.ApiVersion == "1.0")
+                            sidekaContentJObject["columns"] = JArray.FromObject(new string[] { "nik", "nama_penduduk", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "pendidikan", "agama", "status_kawin", "pekerjaan", "pekerjaan_ped", "kewarganegaraan", "kompetensi", "no_telepon", "email", "no_kitas", "no_paspor", "golongan_darah", "status_penduduk", "status_tinggal", "kontrasepsi", "difabilitas", "no_kk", "nama_ayah", "nama_ibu", "hubungan_keluarga", "nama_dusun", "rw", "rt", "alamat_jalan" });
 
-                        dbContext.Update(sidekaContent);
-                        dbContext.SaveChanges();
+                        try
+                        {
+                            Console.WriteLine("Calculating Sizes....");
 
-                        Console.WriteLine("Sizes Have Been Saved");
+                            var content = new SidekaContentViewModel(sidekaContentJObject);
+                            var contentSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(content.Data));
+                            var diffSize = ASCIIEncoding.Unicode.GetByteCount(JsonConvert.SerializeObject(content.Diffs));
+
+                            Console.WriteLine("Desa {0}-Change Id {1}, Content Size {2}, Diff Size {3}", desa.Desa, sidekaContent.ChangeId, contentSize, diffSize);
+                            Console.WriteLine("Saving Size...");
+
+                            sidekaContent.ContentSize = contentSize;
+                            sidekaContent.DiffSize = diffSize;
+
+                            dbContext.Update(sidekaContent);
+                            dbContext.SaveChanges();
+
+                            Console.WriteLine("Sizes Have Been Saved");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("Error When Calculating Size Desa {0}-{1}: {2}", desa.BlogId, desa.Desa, ex.Message);
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("Error When Calculating Size Desa {0}-{1}: {2}", desa.BlogId, desa.Desa, ex.Message);
-                    }
+
+                    skip += 10;
                 }
             }
         }
