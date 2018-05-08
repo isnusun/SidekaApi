@@ -78,10 +78,16 @@ namespace SidekaApi
                             Console.WriteLine("Desa {0}-Change Id {1}, Content Size {2}, Diff Size {3}", desa.Desa, sidekaContent.ChangeId, contentSize, diffSize);
                             Console.WriteLine("Saving Size...");
 
-                            sidekaContent.ContentSize = contentSize;
-                            sidekaContent.DiffSize = diffSize;
-
-                            dbContext.Update(sidekaContent);
+                            var updatedContent = new SidekaContent
+                            {
+                                Id = sidekaContent.Id,
+                                ContentSize = contentSize,
+                                DiffSize = diffSize
+                            };
+                            dbContext.Attach(updatedContent);
+                            dbContext.Entry(updatedContent).Property(c => c.ContentSize).IsModified = true;
+                            dbContext.Entry(updatedContent).Property(c => c.DiffSize).IsModified = true;
+                            dbContext.Update(updatedContent);
                             dbContext.SaveChanges();
 
                             Console.WriteLine("Sizes Have Been Saved");
