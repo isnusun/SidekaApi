@@ -28,6 +28,7 @@ namespace SidekaApi
             var optionsBuilder = new DbContextOptionsBuilder<SidekaDbContext>();
             optionsBuilder.UseMySql(Configuration.GetConnectionString("DefaultConnection"));
             dbContext = new SidekaDbContext(optionsBuilder.Options);
+            dbContext.Database.SetCommandTimeout(150000);
         }
 
         public void Run()
@@ -35,7 +36,7 @@ namespace SidekaApi
             Console.WriteLine("========= Updating Data =========");
             Console.WriteLine("Fetching Desa");
 
-            var desas = dbContext.SidekaDesa.ToList();
+            var desas = dbContext.SidekaDesa.Where(d => d.BlogId > 6).OrderBy(d => d.BlogId).ToList();
 
             foreach (var desa in desas)
             {
