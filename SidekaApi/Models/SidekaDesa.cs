@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -11,6 +12,7 @@ namespace SidekaApi.Models
     public class SidekaDesa
     {
         [Key]
+        [JsonProperty("blog_id")]
         public int BlogId { get; set; }
         public string Domain { get; set; }
         public double? Latitude { get; set; }
@@ -23,7 +25,9 @@ namespace SidekaApi.Models
         public string Kades { get; set; }
         public string Sekdes { get; set; }
         public string Pendamping { get; set; }
+        [JsonProperty("is_dbt")]
         public bool IsDbt { get; set; }
+        [JsonProperty("is_lokpri")]
         public bool IsLokpri { get; set; }
     }
 }
