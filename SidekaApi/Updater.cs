@@ -54,7 +54,7 @@ namespace SidekaApi
                 while(counter < numberOfContents)
                 {
                     Console.WriteLine("Fetching contents skip #{0} take 10", skip);
-                    var sidekaContents = contentQuery.OrderByDescending(sc => sc.ChangeId).Skip(skip).Take(10).ToList();
+                    var sidekaContents = contentQuery.AsNoTracking().OrderByDescending(sc => sc.ChangeId).Skip(skip).Take(10).ToList();
 
                     foreach (var sidekaContent in sidekaContents)
                     {
@@ -87,7 +87,7 @@ namespace SidekaApi
                             dbContext.Attach(updatedContent);
                             dbContext.Entry(updatedContent).Property(c => c.ContentSize).IsModified = true;
                             dbContext.Entry(updatedContent).Property(c => c.DiffSize).IsModified = true;
-                            dbContext.Update(updatedContent);
+                            //dbContext.Update(updatedContent);
                             dbContext.SaveChanges();
 
                             Console.WriteLine("Sizes Have Been Saved");
