@@ -508,6 +508,10 @@ namespace SidekaApi.Controllers
                         if (content.Data != null && content.Data[column.Key] != null && 
                             new string[] { "perencanaan", "penganggaran", "penerimaan", "spp" }.Contains(contentType))
                         {
+                            var invalid = ValidateDuplicatesData(column.Key, column.Value, content.Data[column.Key]);
+                            if(invalid != null)
+                                return invalid;
+
                             // Special case for client who posted data instead of diffs
                             newContent.Data[column.Key] = content.Data[column.Key];
 
@@ -531,6 +535,11 @@ namespace SidekaApi.Controllers
                                 latestContentJObject["columns"][column.Key], 
                                 contentJObject["columns"][column.Key], 
                                 latestContent.Data[column.Key]);
+
+                            var invalid = ValidateDuplicatesDiffs(column.Key, column.Value, content.Diffs[column.Key], transformedLatestData);
+                            if(invalid != null)
+                                return invalid;
+
                             var mergedData = MergeDiffs(column.Value, content.Diffs[column.Key], transformedLatestData);
                             newContent.Data[column.Key] = mergedData;
                             newContent.Columns[column.Key] = column.Value;
@@ -759,7 +768,7 @@ namespace SidekaApi.Controllers
         private object[] MergeDiffs(SidekaColumnConfig columns, SidekaDiff[] diffs, object[] dataArray)
         {
             var data = dataArray.ToList();
-
+            var idGetter = GetIdGetter(columns);
 
             foreach(var diff in diffs)
             {
@@ -772,18 +781,10 @@ namespace SidekaApi.Controllers
                 {
                     for (var i = 0; i <= data.Count - 1; i++)
                     {
-                        if (columns.IsDict)
-                        {
-                            var datumId = (string)((Dictionary<string, object>)data[i])["id"];
-                            var modifiedId = (string)((Dictionary<string, object>)modified)["id"];
-                            if (datumId == modifiedId)
-                                data[i] = modified;
-                        }
-                        else
-                        {
-                            if (((object[])data[i])[0].Equals(((object[])modified)[0]))
-                                data[i] = modified;
-                        }
+                        var datumId = idGetter(data[i]);
+                        var modifiedId = idGetter(modified);
+                        if(datumId == modifiedId)
+                            data[i] = modified;
                     }
                 }
 
@@ -791,25 +792,17 @@ namespace SidekaApi.Controllers
                 {
                     for(var i = data.Count - 1; i >= 0; i--)
                     {
-                        if (columns.IsDict)
-                        {
-                            var datumId = (string)((Dictionary<string, object>)data[i])["id"];
-                            var deletedId = (string)((Dictionary<string, object>)deleted)["id"];
-                            if (datumId == deletedId)
-                                data.RemoveAt(i);
-                        }
-                        else
-                        {
-                            if (((object[])data[i])[0].Equals(((object[])deleted)[0]))
-                                data.RemoveAt(i);
-                        }
+                        var datumId = idGetter(data[i]);
+                        var deletedId = idGetter(deleted);
+                        if (datumId == deletedId)
+                            data.RemoveAt(i);
                     }
                 }
             }
 
             return data.ToArray();
         }
-        
+
         private IActionResult Validate(SidekaColumnConfig columns, object[] diffTypes, string location)
         {
             var index = 0;
@@ -839,6 +832,58 @@ namespace SidekaApi.Controllers
             return null;
         }
 
+        private IActionResult ValidateDuplicatesDiffs(String tab, SidekaColumnConfig columns, SidekaDiff[] diffs, object[] data)
+        {
+            var idGetter = GetIdGetter(columns);
+            var ids = new HashSet<string>();
+
+            foreach(var item in data)
+            {
+                ids.Add(idGetter(item));
+            }
+
+            foreach(var diff in diffs)
+            {
+                foreach(var added in diff.Added)
+                {
+                    var id = idGetter(added);
+                    if(ids.Contains(id))
+                        return StatusCode((int)HttpStatusCode.BadRequest,
+                            new Dictionary<string, string>() { { "message", 
+                            string.Format("Duplicates item diff {0} in tab {1}", id, tab )}});
+                    ids.Add(id);
+                }
+            }
+
+            return null;
+        }
+
+        private IActionResult ValidateDuplicatesData(String tab, SidekaColumnConfig columns, object[] data)
+        {
+            var idGetter = GetIdGetter(columns);
+            var ids = new HashSet<string>();
+            foreach(var item in data)
+            {
+                var id = idGetter(item);
+                if(ids.Contains(id))
+                    return StatusCode((int)HttpStatusCode.BadRequest,
+                        new Dictionary<string, string>() { { "message", 
+                        string.Format("Duplicates item data {0} in tab {1}", id, tab )}});
+                ids.Add(id);
+            }
+
+            return null;
+        }
+
+        private static Func<Object, String> GetIdGetter(SidekaColumnConfig config){
+            if(config.IsDict)
+                return o => (string)((Dictionary<string, object>) o)["id"];
+            else{
+                var index = Array.IndexOf(config.Columns, ("id"));
+                return o => (String) ((object[])o)[index];
+            }
+        }
+        
         private string GetValueFromHeaders(string key)
         {
             var keyValuePair = Request.Headers.Where(h => h.Key == key).FirstOrDefault();
