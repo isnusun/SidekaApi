@@ -321,9 +321,9 @@ namespace SidekaApi.Controllers
             return Ok(returnData);
         }
 
-        [HttpGet("publishing_info/{desaId}/{contentType}")]
-        [HttpGet("publishing_info/{desaId}/{contentType}/{contentSubtype}")]
-        public async Task<IActionResult> GetPublishingInfo(int desaId, string contentType, string contentSubtype = null)
+        [HttpGet("content_info/{desaId}/{contentType}")]
+        [HttpGet("content_info/{desaId}/{contentType}/{contentSubtype}")]
+        public async Task<IActionResult> GetContentInfo(int desaId, string contentType, string contentSubtype = null)
         {
             var auth = GetAuth(desaId);
             if (auth == null)
