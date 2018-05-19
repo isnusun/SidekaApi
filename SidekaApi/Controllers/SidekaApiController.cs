@@ -231,7 +231,7 @@ namespace SidekaApi.Controllers
                 ChangeId = newChangeId,
                 ApiVersion = "1.0"
             };
-                        
+
             dbContext.Add(sidekaContent);
             await dbContext.SaveChangesAsync();
 
@@ -266,14 +266,13 @@ namespace SidekaApi.Controllers
             var contentQuery = dbContext.SidekaContent
                 .Where(sc => sc.DesaId == desaId)
                 .Where(sc => sc.Type == contentType)
-                .Where(sc => sc.Subtype == contentSubtype)
                 .Where(sc => sc.ChangeId >= clientChangeId);
 
             if (!string.IsNullOrWhiteSpace(contentSubtype))
                 contentQuery = contentQuery.Where(sc => sc.Subtype == contentSubtype);
 
             var contentId = await contentQuery.OrderByDescending(sc => sc.ChangeId).Select(sc => sc.Id).FirstOrDefaultAsync();
-            if(contentId == 0)
+            if (contentId == 0)
                 return StatusCode((int)HttpStatusCode.NotFound, new Dictionary<string, string>());
 
             var sidekaContent = await dbContext.SidekaContent.FindAsync(contentId);
@@ -320,6 +319,43 @@ namespace SidekaApi.Controllers
 
             Log.Information("After inserting logs {0}", sw.Elapsed);
             return Ok(returnData);
+        }
+
+        [HttpGet("publishing_info/{desaId}/{contentType}")]
+        [HttpGet("publishing_info/{desaId}/{contentType}/{contentSubtype}")]
+        public async Task<IActionResult> GetPublishingInfo(int desaId, string contentType, string contentSubtype = null)
+        {
+            var auth = GetAuth(desaId);
+            if (auth == null)
+                return StatusCode((int)HttpStatusCode.Forbidden, new Dictionary<string, string>() { { "message", "Invalid or no token" } });
+
+            var changeId = QueryStringHelper.GetQueryString<int>(Request.Query, "changeId", 0);
+            var clientChangeId = 0;
+            if (changeId > 0)
+                clientChangeId = changeId;
+
+            var contentQuery = dbContext.SidekaContent
+                .Where(sc => sc.DesaId == desaId)
+                .Where(sc => sc.Type == contentType)
+                .Where(sc => sc.ChangeId == clientChangeId);
+
+            if (!string.IsNullOrWhiteSpace(contentSubtype))
+                contentQuery = contentQuery.Where(sc => sc.Subtype == contentSubtype);
+
+            var content = await contentQuery.Select(c => new
+            {
+                OpendataPushError = c.OpendataPushError,
+                OpendataDatePushed = c.OpendataDatePushed
+            }).FirstOrDefaultAsync();
+
+            if (content == null)
+                return StatusCode((int)HttpStatusCode.NotFound, new Dictionary<string, string>());
+
+            var result = new Dictionary<string, object>() { };
+            result["opendata_date_pushed"] = content.OpendataDatePushed;
+            result["opendata_push_error"] = content.OpendataPushError ;
+
+            return Ok(result);
         }
 
         [HttpGet("update_sizes/v2/{desaId}/{contentType}")]
