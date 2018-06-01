@@ -22,22 +22,22 @@ namespace SidekaApi
             
             try
             {
-                //var pbdtToSdContent = new PbdtToSdContent();
-                //pbdtToSdContent.run("33.22.20.2009", "2015");
-
                 if (args.Length > 0 && args[0] == "--update-sizes")
                 {
-                    UpdateSizes();
+                    new SizeUpdater().Run();
                 }
                 else if (args.Length > 0 && args[0] == "--pbdt-import")
                 {
-                    var importer = new PbdtXlsxToSql();
-                    importer.Run(@"D:\Documents", "22. SEMARANG", "33.22");
+                    new PbdtXlsxToSql().Run(@"D:\Documents", "22. SEMARANG", "33.22");
                    
                 }
                 else if (args.Length > 0 && args[0] == "--pbdt-to-sdcontent")
                 {
-
+                    new PbdtToSdContent().run("33.22.20.2009", "2015");
+                }
+                else if (args.Length > 0 && args[0] == "--fix-duplicates")
+                {
+                    new DuplicateFixer().Run();
                 }
                 else
                 {
@@ -53,12 +53,6 @@ namespace SidekaApi
             {
                 Log.CloseAndFlush();
             }
-        }
-
-        public static void UpdateSizes()
-        {
-            var updater = new SizeUpdater();
-            updater.Run();
         }
 
         public static IWebHost BuildWebHost(string[] args) =>

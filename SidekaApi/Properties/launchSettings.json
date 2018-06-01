@@ -18,6 +18,7 @@
     },
     "SidekaApi": {
       "commandName": "Project",
+      "commandLineArgs": "--fix-duplicates",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       },
