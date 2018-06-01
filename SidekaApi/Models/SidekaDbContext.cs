@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -11,6 +12,29 @@ namespace SidekaApi.Models
     {
         public SidekaDbContext(DbContextOptions<SidekaDbContext> options) : base(options)
         {
+        }
+        public static IConfiguration CreateConfigurationForTools()
+        {
+            var builder = new ConfigurationBuilder()
+               .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+               .AddEnvironmentVariables();
+
+            var configuration = builder.Build();
+            return configuration;
+        }
+
+        public static SidekaDbContext CreateForTools(IConfiguration configuration = null)
+        {
+            if(configuration == null)
+            {
+                configuration = CreateConfigurationForTools();
+            }
+
+            var optionsBuilder = new DbContextOptionsBuilder<SidekaDbContext>();
+            optionsBuilder.UseMySql(configuration.GetConnectionString("DefaultConnection"));
+            var dbContext = new SidekaDbContext(optionsBuilder.Options);
+            dbContext.Database.SetCommandTimeout(150000);
+            return dbContext;
         }
 
         public DbSet<SidekaContent> SidekaContent { get; set; }

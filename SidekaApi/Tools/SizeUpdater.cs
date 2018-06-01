@@ -10,25 +10,15 @@ using SidekaApi.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
-namespace SidekaApi
+namespace SidekaApi.Tools
 {
-    public class Updater
+    public class SizeUpdater
     {
         private SidekaDbContext dbContext;
-        private IConfiguration Configuration { get; }
 
-        public Updater()
+        public SizeUpdater()
         {
-            var builder = new ConfigurationBuilder()
-               .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-               .AddEnvironmentVariables();
-
-            Configuration = builder.Build();
-
-            var optionsBuilder = new DbContextOptionsBuilder<SidekaDbContext>();
-            optionsBuilder.UseMySql(Configuration.GetConnectionString("DefaultConnection"));
-            dbContext = new SidekaDbContext(optionsBuilder.Options);
-            dbContext.Database.SetCommandTimeout(150000);
+            dbContext = SidekaDbContext.CreateForTools();
         }
 
         public void Run()

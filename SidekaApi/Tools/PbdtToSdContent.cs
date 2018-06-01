@@ -7,25 +7,17 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace SidekaApi
+namespace SidekaApi.Tools
 {
     public class PbdtToSdContent
     {
         private SidekaDbContext dbContext;
-        private IConfiguration Configuration { get; }
+        private IConfiguration configuration;
 
         public PbdtToSdContent()
         {
-            var builder = new ConfigurationBuilder()
-             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-             .AddEnvironmentVariables();
-
-            Configuration = builder.Build();
-
-            var optionsBuilder = new DbContextOptionsBuilder<SidekaDbContext>();
-            optionsBuilder.UseMySql(Configuration.GetConnectionString("DefaultConnection"));
-            Console.WriteLine(Configuration.GetConnectionString("DefaultConnection"));
-            dbContext = new SidekaDbContext(optionsBuilder.Options);
+            configuration = SidekaDbContext.CreateConfigurationForTools();
+            dbContext = SidekaDbContext.CreateForTools(configuration);
         }
 
         public void run(string regionCode, string subtype)
@@ -36,7 +28,7 @@ namespace SidekaApi
             var content = new SidekaContent()
             {
                 DesaId = desa.BlogId,
-                ApiVersion = Configuration.GetValue<string>("ApiVersion"),
+                ApiVersion = configuration.GetValue<string>("ApiVersion"),
                 ChangeId = 1,
                 Type = "Kemiskinan",
                 Content = pbdt.Content,

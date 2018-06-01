@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using System.Net;
 using Serilog;
 using SidekaApi.Helpers;
+using SidekaApi.Tools;
 
 namespace SidekaApi
 {
@@ -56,7 +57,7 @@ namespace SidekaApi
 
         public static void UpdateSizes()
         {
-            var updater = new Updater();
+            var updater = new SizeUpdater();
             updater.Run();
         }
 

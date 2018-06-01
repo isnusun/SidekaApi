@@ -8,25 +8,15 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 
-namespace SidekaApi {
+namespace SidekaApi.Tools {
 
     public class PbdtXlsxToSql {
 
         private SidekaDbContext dbContext;
-        private IConfiguration Configuration { get; }
   
         public PbdtXlsxToSql()
         {
-            var builder = new ConfigurationBuilder()
-               .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-               .AddEnvironmentVariables();
-
-            Configuration = builder.Build();
-
-            var optionsBuilder = new DbContextOptionsBuilder<SidekaDbContext>();
-            optionsBuilder.UseMySql(Configuration.GetConnectionString("DefaultConnection"));
-            Console.WriteLine(Configuration.GetConnectionString("DefaultConnection"));
-            dbContext = new SidekaDbContext(optionsBuilder.Options);
+            dbContext = SidekaDbContext.CreateForTools();
         }
 
         public void Run(string rootDirectory, string fileName, string kabupatenCode)
