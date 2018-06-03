@@ -456,7 +456,7 @@ namespace SidekaApi.Controllers
                                 return invalid;
 
                             location = string.Format("Diff {0} ({1}) tab {2}", index, "deleted", column.Key);
-                            invalid = Validate(column.Value, diff.Deleted, location);
+                            invalid = Validate(column.Value, diff.Deleted, location, false);
                             if (invalid != null)
                                 return invalid;
                         }
@@ -839,7 +839,7 @@ namespace SidekaApi.Controllers
             return data.ToArray();
         }
 
-        private IActionResult Validate(SidekaColumnConfig columns, object[] diffTypes, string location)
+        private IActionResult Validate(SidekaColumnConfig columns, object[] diffTypes, string location, bool validateArrayLength=true)
         {
             var index = 0;
             foreach(var diffType in diffTypes)
@@ -857,7 +857,7 @@ namespace SidekaApi.Controllers
                     if (!t.IsArray)
                         return StatusCode((int)HttpStatusCode.BadRequest,
                             new Dictionary<string, string>() { { "message", string.Format("Invalid item, array expected, at row {0} at {1}", index, location) } });
-                    else if (columns.Columns.Length != ((object[])diffType).Length)
+                    else if (columns.Columns.Length != ((object[])diffType).Length  && validateArrayLength)
                         return StatusCode((int)HttpStatusCode.BadRequest,
                            new Dictionary<string, string>() { { "message",
                                    string.Format("Invalid item, expecting array of length {0} instead of {1}, at row {2} at {3}", 
