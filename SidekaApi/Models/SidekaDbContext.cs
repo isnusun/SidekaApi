@@ -12,6 +12,7 @@ namespace SidekaApi.Models
     {
         public SidekaDbContext(DbContextOptions<SidekaDbContext> options) : base(options)
         {
+            Database.SetCommandTimeout(50000);
         }
         public static IConfiguration CreateConfigurationForTools()
         {
