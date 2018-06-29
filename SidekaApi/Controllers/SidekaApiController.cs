@@ -916,6 +916,8 @@ namespace SidekaApi.Controllers
                 return o => (string)((Dictionary<string, object>) o)["id"];
             else{
                 var index = Array.IndexOf(config.Columns, ("id"));
+                if (index == -1)
+                    index = 0;
                 return o => (String) ((object[])o)[index];
             }
         }
