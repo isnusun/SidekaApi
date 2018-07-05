@@ -39,6 +39,10 @@ namespace SidekaApi
                 {
                     new DuplicateFixer().Run();
                 }
+                else if (args.Length > 0 && args[0] == "--fix-30-34")
+                {
+                    new Column3034Fixer().Run();
+                }
                 else
                 {
                     var host = BuildWebHost(args);
