@@ -722,16 +722,16 @@ namespace SidekaApi.Controllers
                 .Where(sc => sc.Subtype == contentSubtype)
                 .Where(sc => sc.ChangeId > clientChangeId);
 
-            var totalDiffSizeQuery = await contentQuery.SumAsync(sc => sc.DiffSize);
+            var totalDiffSizeQuery = await contentQuery.SumAsync(sc => sc.DiffSize ?? 0);
 
             var contentSizeQuery = await contentQuery.OrderByDescending(sc => sc.ChangeId)
-                    .Select(e => e.ContentSize)
+                    .Select(e => e.ContentSize ?? 0)
                     .FirstOrDefaultAsync();
 
             return new Dictionary<string, int>()
             {
-                {"contentSize", contentSizeQuery != null ? contentSizeQuery.Value : 0},
-                {"diffSize", totalDiffSizeQuery != null ? totalDiffSizeQuery.Value : 0}
+                {"contentSize", contentSizeQuery },
+                {"diffSize", totalDiffSizeQuery }
             };
         }
 
